@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ArrayOfScoreEntry xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <ScoreEntry>
+    <PlayerName>Alpha</PlayerName>
+    <Score>5000</Score>
+    <Date>2025-03-03T17:03:18.8242152+01:00</Date>
+  </ScoreEntry>
+  <ScoreEntry>
+    <PlayerName>Bravo</PlayerName>
+    <Score>4000</Score>
+    <Date>2025-03-03T17:03:18.8286533+01:00</Date>
+  </ScoreEntry>
+  <ScoreEntry>
+    <PlayerName>Charlie</PlayerName>
+    <Score>3000</Score>
+    <Date>2025-03-03T17:03:18.8286574+01:00</Date>
+  </ScoreEntry>
+  <ScoreEntry>
+    <PlayerName>Delta</PlayerName>
+    <Score>2000</Score>
+    <Date>2025-03-03T17:03:18.8286578+01:00</Date>
+  </ScoreEntry>
+  <ScoreEntry>
+    <PlayerName>Player</PlayerName>
+    <Score>1800</Score>
+    <Date>2025-03-03T17:14:51.9027391+01:00</Date>
+  </ScoreEntry>
+  <ScoreEntry>
+    <PlayerName>Echo</PlayerName>
+    <Score>1000</Score>
+    <Date>2025-03-03T17:03:18.8286581+01:00</Date>
+  </ScoreEntry>
+  <ScoreEntry>
+    <PlayerName>Player</PlayerName>
+    <Score>900</Score>
+    <Date>2025-03-03T17:03:36.3018136+01:00</Date>
+  </ScoreEntry>
+</ArrayOfScoreEntry>

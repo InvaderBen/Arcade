@@ -1,13 +1,14 @@
-﻿using System;
+﻿using AsteroidsGame;
+using System;
 
-namespace SpaceInvaders
+namespace Arcade.Asteroids
 {
     public static class Program
     {
         [STAThread]
         static void Main()
         {
-            using (var game = new SpaceInvadersGame())
+            using (var game = new Game1())
                 game.Run();
         }
     }

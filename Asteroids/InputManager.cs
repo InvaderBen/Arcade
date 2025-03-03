@@ -1,5 +1,7 @@
 ﻿using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
+using System.Collections.Generic;
+using System;
 
 namespace AsteroidsGame
 {
@@ -19,6 +21,7 @@ namespace AsteroidsGame
         public bool IsUpPressed { get; private set; }
         public bool IsFireButtonPressed { get; private set; }
         public bool IsRestartPressed { get; private set; }
+        public bool IsEnterPressed { get; private set; }
 
         // Deadzone for thumbstick input
         private const float ThumbstickDeadzone = 0.25f;
@@ -72,12 +75,32 @@ namespace AsteroidsGame
             IsRestartPressed = _currentKeyboardState.IsKeyDown(Keys.Enter) ||
                               _currentGamePadState.Buttons.Y == ButtonState.Pressed ||
                               _currentGamePadState.Buttons.Start == ButtonState.Pressed;
+
+            // Enter (Enter key, A button)
+            IsEnterPressed = _currentKeyboardState.IsKeyDown(Keys.Enter) ||
+                            _currentGamePadState.Buttons.A == ButtonState.Pressed;
         }
 
         public bool IsExitRequested()
         {
-            return _currentKeyboardState.IsKeyDown(Keys.Escape) ||
-                   _currentGamePadState.Buttons.Back == ButtonState.Pressed;
+            // Only exit on Escape when there's no way to return to a previous screen
+            // For example, in the main menu but nowhere else
+            return (_currentKeyboardState.IsKeyDown(Keys.Escape) &&
+                    _previousKeyboardState.IsKeyUp(Keys.Escape) &&
+                    // Add additional condition to check state or add property for current state
+                    _inMainMenu) ||
+                   (_currentGamePadState.Buttons.Back == ButtonState.Pressed &&
+                    _previousGamePadState.Buttons.Back == ButtonState.Released &&
+                    _inMainMenu);
+        }
+
+        // Add this property to InputManager class to track when we're in the main menu
+        private bool _inMainMenu = true;
+
+        // Method to set main menu status
+        public void SetInMainMenu(bool inMainMenu)
+        {
+            _inMainMenu = inMainMenu;
         }
 
         public bool IsFirePressed()
@@ -97,6 +120,20 @@ namespace AsteroidsGame
                                   _previousGamePadState.Buttons.Start == ButtonState.Released);
 
             return keyboardRestart || gamepadRestart;
+        }
+
+        public bool IsMenuConfirmPressed()
+        {
+            // Check if enter/A button was just pressed this frame (not held down)
+            bool keyboardConfirm = _currentKeyboardState.IsKeyDown(Keys.Enter) &&
+                                  !_previousKeyboardState.IsKeyDown(Keys.Enter);
+
+            bool gamepadConfirm = (_currentGamePadState.Buttons.A == ButtonState.Pressed &&
+                                  _previousGamePadState.Buttons.A == ButtonState.Released) ||
+                                 (_currentGamePadState.Buttons.Start == ButtonState.Pressed &&
+                                  _previousGamePadState.Buttons.Start == ButtonState.Released);
+
+            return keyboardConfirm || gamepadConfirm;
         }
 
         // Detect if a key was just pressed this frame
@@ -122,5 +159,67 @@ namespace AsteroidsGame
         {
             return !_currentGamePadState.IsButtonDown(button) && _previousGamePadState.IsButtonDown(button);
         }
+
+        // Returns all keys that were just pressed this frame
+        public Keys[] GetPressedKeys()
+        {
+            List<Keys> pressedKeys = new List<Keys>();
+            Keys[] allKeys = (Keys[])Enum.GetValues(typeof(Keys));
+
+            foreach (Keys key in allKeys)
+            {
+                if (IsKeyPressed(key))
+                {
+                    pressedKeys.Add(key);
+                }
+            }
+
+            return pressedKeys.ToArray();
+        }
+
+        // Helper method to determine if a key is a letter or number
+        public bool IsLetterOrDigit(Keys key)
+        {
+            return (key >= Keys.A && key <= Keys.Z) ||
+                   (key >= Keys.D0 && key <= Keys.D9) ||
+                   (key >= Keys.NumPad0 && key <= Keys.NumPad9);
+        }
+
+        // Convert key to character
+        public char KeyToChar(Keys key)
+        {
+            if (key >= Keys.A && key <= Keys.Z)
+            {
+                // Check shift for uppercase/lowercase
+                return _currentKeyboardState.IsKeyDown(Keys.LeftShift) || _currentKeyboardState.IsKeyDown(Keys.RightShift)
+                    ? (char)('A' + (key - Keys.A))
+                    : (char)('a' + (key - Keys.A));
+            }
+            else if (key >= Keys.D0 && key <= Keys.D9)
+            {
+                return (char)('0' + (key - Keys.D0));
+            }
+            else if (key >= Keys.NumPad0 && key <= Keys.NumPad9)
+            {
+                return (char)('0' + (key - Keys.NumPad0));
+            }
+
+            // Special characters
+            switch (key)
+            {
+                case Keys.Space: return ' ';
+                case Keys.OemMinus: return '-';
+                case Keys.OemPeriod: return '.';
+                case Keys.OemComma: return ',';
+                case Keys.OemQuestion: return '?';
+                case Keys.OemPlus: return '+';
+                default: return '\0'; // Null character for unsupported keys
+            }
+        }
+
+
+
     }
+
+
 }

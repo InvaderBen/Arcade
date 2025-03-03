@@ -8,6 +8,16 @@ namespace AsteroidsGame
 {
     public class Game1 : Game
     {
+        // Add a new state for name entry
+        public enum GameState
+        {
+            MainMenu,
+            Playing,
+            GameOver,
+            HighScore,
+            NameEntry
+        }
+
         private GraphicsDeviceManager _graphics;
         private SpriteBatch _spriteBatch;
 
@@ -28,31 +38,113 @@ namespace AsteroidsGame
         // Game state
         private int _score;
         private int _lives;
+        private GameState _gameState;
         private bool _gameOver;
 
         // Rendering and input
         private Renderer _renderer;
+        private MenuRenderer _menuRenderer;
         private InputManager _inputManager;
         private CollisionManager _collisionManager;
+        private HighScoreManager _highScoreManager;
+        private SpriteFont _font;
 
         // Controller vibration
         private bool _vibrateController;
         private float _vibrationTime;
         private const float MaxVibrationTime = 0.2f;
 
+        // Window resizing
+        private bool _isResizing;
+        private Point _oldWindowSize;
+        private Matrix _scaleMatrix;
+        private Rectangle _virtualViewport;
+
+        // Constants for window resizing
+        private readonly int _minWindowWidth = 640;
+        private readonly int _minWindowHeight = 480;
+
         public Game1()
         {
             _graphics = new GraphicsDeviceManager(this);
             Content.RootDirectory = "Content";
-            IsMouseVisible = true;
 
+            // Make the window resizable
+            Window.AllowUserResizing = true;
+            Window.ClientSizeChanged += Window_ClientSizeChanged;
+
+            // Set initial window size
             _graphics.PreferredBackBufferWidth = GameConstants.ScreenWidth;
             _graphics.PreferredBackBufferHeight = GameConstants.ScreenHeight;
+
+            // Show mouse cursor
+            IsMouseVisible = true;
 
             // Set target frame rate
             _graphics.SynchronizeWithVerticalRetrace = true;
             IsFixedTimeStep = true;
             TargetElapsedTime = TimeSpan.FromSeconds(1d / 60d); // 60fps
+
+            // Initialize resizing variables
+            _isResizing = false;
+            _oldWindowSize = new Point(_graphics.PreferredBackBufferWidth, _graphics.PreferredBackBufferHeight);
+            _scaleMatrix = Matrix.Identity;
+            _virtualViewport = new Rectangle(0, 0, GameConstants.ScreenWidth, GameConstants.ScreenHeight);
+        }
+
+        private void Window_ClientSizeChanged(object sender, EventArgs e)
+        {
+            // Flag that we need to update scaling
+            _isResizing = true;
+        }
+
+        private void UpdateScaling()
+        {
+            if (!_isResizing) return;
+
+            // Get current window size
+            int windowWidth = Window.ClientBounds.Width;
+            int windowHeight = Window.ClientBounds.Height;
+
+            // Enforce minimum window size
+            if (windowWidth < _minWindowWidth || windowHeight < _minWindowHeight)
+            {
+                windowWidth = Math.Max(windowWidth, _minWindowWidth);
+                windowHeight = Math.Max(windowHeight, _minWindowHeight);
+
+                _graphics.PreferredBackBufferWidth = windowWidth;
+                _graphics.PreferredBackBufferHeight = windowHeight;
+                _graphics.ApplyChanges();
+            }
+
+            // Update back buffer size
+            _graphics.PreferredBackBufferWidth = windowWidth;
+            _graphics.PreferredBackBufferHeight = windowHeight;
+            _graphics.ApplyChanges();
+
+            // Calculate scaling to maintain aspect ratio
+            float scaleX = (float)windowWidth / GameConstants.ScreenWidth;
+            float scaleY = (float)windowHeight / GameConstants.ScreenHeight;
+            float scale = Math.Min(scaleX, scaleY);
+
+            // Calculate letterbox/pillarbox positioning
+            int viewWidth = (int)(GameConstants.ScreenWidth * scale);
+            int viewHeight = (int)(GameConstants.ScreenHeight * scale);
+            int viewX = (windowWidth - viewWidth) / 2;
+            int viewY = (windowHeight - viewHeight) / 2;
+
+            // Update viewport
+            _virtualViewport = new Rectangle(viewX, viewY, viewWidth, viewHeight);
+
+            // Create scale matrix for rendering
+            _scaleMatrix = Matrix.CreateScale(scale, scale, 1) *
+                          Matrix.CreateTranslation(viewX, viewY, 0);
+
+            // Store window size for next comparison
+            _oldWindowSize = new Point(windowWidth, windowHeight);
+
+            // Clear resize flag
+            _isResizing = false;
         }
 
         protected override void Initialize()
@@ -67,12 +159,17 @@ namespace AsteroidsGame
 
             _score = 0;
             _lives = GameConstants.InitialLives;
+            _gameState = GameState.MainMenu;
             _gameOver = false;
             _vibrateController = false;
             _vibrationTime = 0f;
 
             _inputManager = new InputManager();
             _collisionManager = new CollisionManager();
+            _highScoreManager = new HighScoreManager();
+
+            // Initialize scaling
+            UpdateScaling();
 
             base.Initialize();
         }
@@ -81,8 +178,12 @@ namespace AsteroidsGame
         {
             _spriteBatch = new SpriteBatch(GraphicsDevice);
 
-            // Initialize renderer
+            // Load font
+            _font = Content.Load<SpriteFont>("Font");
+
+            // Initialize renderers
             _renderer = new Renderer(GraphicsDevice, Content, _spriteBatch);
+            _menuRenderer = new MenuRenderer(GraphicsDevice, _spriteBatch, _font);
 
             // Initialize player
             _player = new Player(
@@ -98,12 +199,6 @@ namespace AsteroidsGame
 
             // Pre-allocate asteroid objects for pool
             PreallocateAsteroids();
-
-            // Create initial asteroids
-            for (int i = 0; i < GameConstants.InitialAsteroidCount; i++)
-            {
-                SpawnAsteroid(AsteroidSize.Large);
-            }
         }
 
         private void PreallocateBullets()
@@ -128,15 +223,80 @@ namespace AsteroidsGame
 
         protected override void Update(GameTime gameTime)
         {
+            // Check if window has been resized
+            if (_isResizing || Window.ClientBounds.Width != _oldWindowSize.X || Window.ClientBounds.Height != _oldWindowSize.Y)
+            {
+                UpdateScaling();
+            }
+
             // Process input - always call Update on input manager
             _inputManager.Update();
 
-            // Exit game if requested
+            // Update input manager's state awareness
+            _inputManager.SetInMainMenu(_gameState == GameState.MainMenu);
+
+            // Exit game if requested (in any state)
             if (_inputManager.IsExitRequested())
                 Exit();
 
             float deltaTime = (float)gameTime.ElapsedGameTime.TotalSeconds;
 
+            // Update based on current game state
+            switch (_gameState)
+            {
+                case GameState.MainMenu:
+                    UpdateMainMenu(deltaTime);
+                    break;
+
+                case GameState.Playing:
+                    UpdatePlaying(deltaTime);
+                    break;
+
+                case GameState.GameOver:
+                    UpdateGameOver(deltaTime);
+                    break;
+
+                case GameState.HighScore:
+                    UpdateHighScore(deltaTime);
+                    break;
+
+                case GameState.NameEntry:
+                    UpdateNameEntry(deltaTime);
+                    break;
+            }
+
+            base.Update(gameTime);
+        }
+
+        private void UpdateMainMenu(float deltaTime)
+        {
+            // Update menu
+            _menuRenderer.Update(deltaTime, _inputManager);
+
+            // Check for selection
+            if (_inputManager.IsMenuConfirmPressed())
+            {
+                int selectedOption = _menuRenderer.GetSelectedOption();
+
+                switch (selectedOption)
+                {
+                    case 0: // Play
+                        StartNewGame();
+                        break;
+
+                    case 1: // High Score
+                        _gameState = GameState.HighScore;
+                        break;
+
+                    case 2: // Exit
+                        Exit();
+                        break;
+                }
+            }
+        }
+
+        private void UpdatePlaying(float deltaTime)
+        {
             // Handle controller vibration if active
             if (_vibrateController)
             {
@@ -150,64 +310,159 @@ namespace AsteroidsGame
                 }
             }
 
-            if (!_gameOver)
+            // Handle player movement
+            _player.HandleInput(_inputManager);
+            _player.Update(deltaTime);
+
+            // Fire bullets
+            if (_inputManager.IsFirePressed() && _player.CanFire())
             {
-                // Handle player movement
-                _player.HandleInput(_inputManager);
-                _player.Update(deltaTime);
+                AddBullet(_player.GetBulletPosition(), _player.GetBulletVelocity());
+            }
 
-                // Fire bullets
-                if (_inputManager.IsFirePressed() && _player.CanFire())
+            // Update bullets
+            for (int i = _bullets.Count - 1; i >= 0; i--)
+            {
+                _bullets[i].Update(deltaTime);
+
+                if (_bullets[i].ShouldRemove())
                 {
-                    AddBullet(_player.GetBulletPosition(), _player.GetBulletVelocity());
-                }
-
-                // Update bullets
-                for (int i = _bullets.Count - 1; i >= 0; i--)
-                {
-                    _bullets[i].Update(deltaTime);
-
-                    if (_bullets[i].ShouldRemove())
-                    {
-                        RecycleBullet(i);
-                    }
-                }
-
-                // Update asteroids
-                foreach (var asteroid in _asteroids)
-                {
-                    asteroid.Update(deltaTime);
-                }
-
-                // Check for collisions
-                HandleCollisions();
-
-                // Possibly spawn new asteroids
-                if (_asteroids.Count < GameConstants.MaxAsteroids && _random.Next(100) < 1)
-                {
-                    SpawnAsteroid(AsteroidSize.Large);
-                }
-
-                // Check for game over
-                if (_lives <= 0)
-                {
-                    _gameOver = true;
+                    RecycleBullet(i);
                 }
             }
-            else if (_inputManager.IsRestartButtonPressed()) // Use the fixed method
+
+            // Update asteroids
+            foreach (var asteroid in _asteroids)
+            {
+                asteroid.Update(deltaTime);
+            }
+
+            // Check for collisions
+            HandleCollisions();
+
+            // Possibly spawn new asteroids
+            if (_asteroids.Count < GameConstants.MaxAsteroids && _random.Next(100) < 1)
+            {
+                SpawnAsteroid(AsteroidSize.Large);
+            }
+
+            // Check for game over
+            if (_lives <= 0)
+            {
+                _gameOver = true;
+                _gameState = GameState.GameOver;
+
+                // Check if score qualifies for high score list
+                if (_highScoreManager.IsHighScore(_score))
+                {
+                    // Move to name entry state
+                    _gameState = GameState.NameEntry;
+                    _highScoreManager.StartNameEntry(_score);
+                }
+            }
+
+            // Pause game
+            if (_inputManager.IsKeyPressed(Keys.P) || _inputManager.IsButtonPressed(Buttons.Start))
+            {
+                _gameState = GameState.MainMenu;
+            }
+
+            // Handle ESC key - go to main menu rather than exiting
+            if (_inputManager.IsKeyPressed(Keys.Escape))
+            {
+                _gameState = GameState.MainMenu;
+            }
+        }
+
+        private void UpdateGameOver(float deltaTime)
+        {
+            // Wait for restart input
+            if (_inputManager.IsRestartButtonPressed())
             {
                 RestartGame();
             }
 
-            base.Update(gameTime);
+            // Return to main menu
+            if (_inputManager.IsKeyPressed(Keys.Escape) || _inputManager.IsButtonPressed(Buttons.B))
+            {
+                _gameState = GameState.MainMenu;
+            }
+        }
+
+        private void UpdateHighScore(float deltaTime)
+        {
+            // Update menu background
+            _menuRenderer.Update(deltaTime, _inputManager);
+
+            // Return to main menu
+            if (_inputManager.IsMenuConfirmPressed() ||
+                _inputManager.IsKeyPressed(Keys.Escape) ||
+                _inputManager.IsButtonPressed(Buttons.B))
+            {
+                _gameState = GameState.MainMenu;
+            }
+        }
+
+        private void UpdateNameEntry(float deltaTime)
+        {
+            // Update menu background
+            _menuRenderer.Update(deltaTime, _inputManager);
+
+            // Process name entry
+            foreach (Keys key in _inputManager.GetPressedKeys())
+            {
+                // Let the high score manager handle the key press
+                if (_highScoreManager.HandleKeypress(key))
+                {
+                    // If name entry is complete, go to high scores
+                    if (!_highScoreManager.IsEnteringName)
+                    {
+                        _gameState = GameState.HighScore;
+                    }
+                    break;
+                }
+            }
         }
 
         protected override void Draw(GameTime gameTime)
         {
             GraphicsDevice.Clear(Color.Black);
 
-            _spriteBatch.Begin();
+            // Begin with scaling matrix applied
+            _spriteBatch.Begin(transformMatrix: _scaleMatrix);
 
+            // Draw based on current game state
+            switch (_gameState)
+            {
+                case GameState.MainMenu:
+                    _menuRenderer.DrawMainMenu();
+                    break;
+
+                case GameState.Playing:
+                    DrawPlaying();
+                    break;
+
+                case GameState.GameOver:
+                    DrawPlaying();
+                    DrawGameOver();
+                    break;
+
+                case GameState.HighScore:
+                    _menuRenderer.DrawHighScores(_highScoreManager.GetHighScores());
+                    break;
+
+                case GameState.NameEntry:
+                    _menuRenderer.DrawNameEntry(_highScoreManager.CurrentName);
+                    break;
+            }
+
+            _spriteBatch.End();
+
+            base.Draw(gameTime);
+        }
+
+        private void DrawPlaying()
+        {
             // Draw game objects
             _renderer.DrawPlayer(_player);
 
@@ -221,12 +476,66 @@ namespace AsteroidsGame
                 _renderer.DrawBullet(bullet);
             }
 
-            // Draw UI elements
-            _renderer.DrawUI(_score, _lives, _gameOver);
+            // Draw UI elements - only if not in game over state
+            if (_gameState != GameState.GameOver)
+            {
+                _renderer.DrawUI(_score, _lives, false);
+            }
+        }
 
-            _spriteBatch.End();
+        private void DrawGameOver()
+        {
+            // Draw game over message
+            string gameOverText = "GAME OVER";
+            Vector2 textSize = _font.MeasureString(gameOverText);
+            _spriteBatch.DrawString(
+                _font,
+                gameOverText,
+                new Vector2(
+                    (GameConstants.ScreenWidth - textSize.X) / 2,
+                    GameConstants.ScreenHeight / 2 - 50
+                ),
+                Color.Red
+            );
 
-            base.Draw(gameTime);
+            // Draw final score
+            string scoreText = $"FINAL SCORE: {_score}";
+            Vector2 scoreSize = _font.MeasureString(scoreText);
+            _spriteBatch.DrawString(
+                _font,
+                scoreText,
+                new Vector2(
+                    (GameConstants.ScreenWidth - scoreSize.X) / 2,
+                    GameConstants.ScreenHeight / 2
+                ),
+                Color.White
+            );
+
+            // Draw restart instructions
+            string restartText = "PRESS ENTER TO RESTART";
+            Vector2 restartSize = _font.MeasureString(restartText);
+            _spriteBatch.DrawString(
+                _font,
+                restartText,
+                new Vector2(
+                    (GameConstants.ScreenWidth - restartSize.X) / 2,
+                    GameConstants.ScreenHeight / 2 + 50
+                ),
+                Color.Yellow
+            );
+
+            // Draw menu return instructions
+            string menuText = "PRESS ESC FOR MENU";
+            Vector2 menuSize = _font.MeasureString(menuText);
+            _spriteBatch.DrawString(
+                _font,
+                menuText,
+                new Vector2(
+                    (GameConstants.ScreenWidth - menuSize.X) / 2,
+                    GameConstants.ScreenHeight / 2 + 80
+                ),
+                Color.Yellow
+            );
         }
 
         private void AddBullet(Vector2 position, Vector2 velocity)
@@ -445,11 +754,12 @@ namespace AsteroidsGame
             }
         }
 
-        private void RestartGame()
+        private void StartNewGame()
         {
             _score = 0;
             _lives = GameConstants.InitialLives;
             _gameOver = false;
+            _gameState = GameState.Playing;
 
             // Return all active game objects to their pools
             foreach (var bullet in _bullets)
@@ -472,6 +782,11 @@ namespace AsteroidsGame
             {
                 SpawnAsteroid(AsteroidSize.Large);
             }
+        }
+
+        private void RestartGame()
+        {
+            StartNewGame();
         }
     }
 }
