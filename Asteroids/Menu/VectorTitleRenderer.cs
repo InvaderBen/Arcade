@@ -22,9 +22,16 @@ namespace AsteroidsGame
         private float _characterSpacing = 1.2f; // Spacing between letters as multiple of width
         private Color _color = Color.White;
 
+        // Character size information
+        private float _defaultLetterWidth = 40.0f;
+        private float _defaultLetterHeight = 60.0f;
+
         // Reusable vectors to avoid GC
         private Vector2 _reusableVec1 = new Vector2();
         private Vector2 _reusableVec2 = new Vector2();
+
+        // For estimating title width
+        private Dictionary<char, float> _charWidths = new Dictionary<char, float>();
 
         public VectorTitleRenderer(GraphicsDevice graphicsDevice, SpriteBatch spriteBatch)
         {
@@ -40,6 +47,55 @@ namespace AsteroidsGame
             // Initialize letter definitions
             _letterVectors = new Dictionary<char, Vector2[]>();
             InitializeLetterVectors();
+            InitializeCharWidths();
+        }
+
+        // Calculate relative widths for each character
+        private void InitializeCharWidths()
+        {
+            foreach (var kvp in _letterVectors)
+            {
+                char c = kvp.Key;
+                Vector2[] points = kvp.Value;
+
+                // Calculate the actual width of the character
+                float minX = float.MaxValue;
+                float maxX = float.MinValue;
+
+                foreach (var point in points)
+                {
+                    minX = Math.Min(minX, point.X);
+                    maxX = Math.Max(maxX, point.X);
+                }
+
+                // Store the relative width (normalized)
+                _charWidths[c] = maxX - minX;
+            }
+
+            // Add width for space
+            _charWidths[' '] = 0.5f;
+        }
+
+        // Calculate the width of a string using this renderer's character definitions
+        public float CalculateWidth(string text, float scale)
+        {
+            float width = 0;
+            float letterWidth = _defaultLetterWidth * scale;
+
+            foreach (char c in text)
+            {
+                if (_charWidths.TryGetValue(c, out float charWidth))
+                {
+                    width += charWidth * letterWidth * _characterSpacing;
+                }
+                else
+                {
+                    // Default for unknown characters
+                    width += letterWidth * _characterSpacing;
+                }
+            }
+
+            return width;
         }
 
         private void InitializeLetterVectors()
@@ -137,6 +193,51 @@ namespace AsteroidsGame
                 new Vector2(0.0f, 1.0f),    // bottom left
                 new Vector2(0.0f, 0.0f)     // back to top left
             };
+
+            // H
+            _letterVectors['H'] = new Vector2[]
+            {
+                new Vector2(0.0f, 0.0f),    // top left
+                new Vector2(0.0f, 1.0f),    // bottom left
+                new Vector2(0.0f, 0.5f),    // middle left
+                new Vector2(1.0f, 0.5f),    // middle right
+                new Vector2(1.0f, 0.0f),    // top right
+                new Vector2(1.0f, 1.0f)     // bottom right
+            };
+
+            // G
+            _letterVectors['G'] = new Vector2[]
+            {
+                new Vector2(0.5f, 0.0f),    // top center
+                new Vector2(0.0f, 0.3f),    // top left
+                new Vector2(0.0f, 0.7f),    // bottom left
+                new Vector2(0.5f, 1.0f),    // bottom center
+                new Vector2(1.0f, 0.7f),    // bottom right
+                new Vector2(1.0f, 0.5f),    // middle right
+                new Vector2(0.6f, 0.5f),    // middle center
+                new Vector2(1.0f, 0.3f),    // top right
+                new Vector2(0.5f, 0.0f)     // back to top center
+            };
+
+            // C
+            _letterVectors['C'] = new Vector2[]
+            {
+                new Vector2(1.0f, 0.3f),    // top right
+                new Vector2(0.5f, 0.0f),    // top center
+                new Vector2(0.0f, 0.3f),    // top left
+                new Vector2(0.0f, 0.7f),    // bottom left
+                new Vector2(0.5f, 1.0f),    // bottom center
+                new Vector2(1.0f, 0.7f)     // bottom right
+            };
+
+            // N
+            _letterVectors['N'] = new Vector2[]
+            {
+                new Vector2(0.0f, 1.0f),    // bottom left
+                new Vector2(0.0f, 0.0f),    // top left
+                new Vector2(1.0f, 1.0f),    // diagonal to bottom right
+                new Vector2(1.0f, 0.0f)     // top right
+            };
         }
 
         public void Update(float deltaTime)
@@ -156,8 +257,8 @@ namespace AsteroidsGame
             _color = color;
 
             float currentX = position.X;
-            float letterWidth = scale * 40;
-            float letterHeight = scale * 60;
+            float letterWidth = _defaultLetterWidth * _scale;
+            float letterHeight = _defaultLetterHeight * _scale;
 
             // Draw each letter
             foreach (char c in title)
@@ -165,7 +266,15 @@ namespace AsteroidsGame
                 if (_letterVectors.TryGetValue(c, out Vector2[] vectors))
                 {
                     DrawLetter(vectors, new Vector2(currentX, position.Y), letterWidth, letterHeight, _color);
-                    currentX += letterWidth * _characterSpacing;
+
+                    // Calculate the width of this character for proper spacing
+                    float charWidth = 1.0f; // Default normalized width
+                    if (_charWidths.TryGetValue(c, out float width))
+                    {
+                        charWidth = width;
+                    }
+
+                    currentX += letterWidth * charWidth * _characterSpacing;
                 }
                 else if (c == ' ')
                 {
@@ -173,6 +282,18 @@ namespace AsteroidsGame
                     currentX += letterWidth * 0.8f;
                 }
             }
+        }
+
+        public void DrawCenteredTitle(string title, float y, float scale, Color color)
+        {
+            // Calculate the actual width of the title
+            float titleWidth = CalculateWidth(title, scale);
+
+            // Calculate starting X position to center the title
+            float startX = (GameConstants.ScreenWidth - titleWidth) / 2;
+
+            // Draw the title at the calculated position
+            DrawTitle(title, new Vector2(startX, y), scale, color);
         }
 
         private void DrawLetter(Vector2[] points, Vector2 position, float width, float height, Color color)

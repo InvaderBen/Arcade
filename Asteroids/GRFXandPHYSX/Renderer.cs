@@ -190,8 +190,34 @@ namespace AsteroidsGame
 
         public void DrawPlayer(Player player)
         {
+            // If player is dying, draw the death animation
+            if (player.IsDying())
+            {
+                // Draw ship fragments
+                List<Vector2[]> fragments = player.GetDeathFragments();
+                List<float> rotations = player.GetFragmentRotations();
+
+                // Draw each fragment
+                for (int i = 0; i < fragments.Count; i++)
+                {
+                    DrawVectorShape(fragments[i], player.Position, rotations[i], Color.White);
+                }
+                return;
+            }
+
+            // If player is invulnerable but not visible due to blinking, skip drawing
+            if (player.IsInvulnerable() && !player.IsVisible())
+            {
+                return;
+            }
+
+            // Normal draw - use white color normally, or slightly transparent if invulnerable
+            Color playerColor = player.IsInvulnerable() ?
+                new Color(255, 255, 255, 128) :  // Semi-transparent when invulnerable
+                Color.White;                     // Normal color
+
             // Draw the ship as vector outline
-            DrawVectorShape(_shipVectors[0], player.Position, player.Rotation, Color.White);
+            DrawVectorShape(_shipVectors[0], player.Position, player.Rotation, playerColor);
 
             // Draw thruster if active
             if (player.IsThrusterActive())
@@ -215,10 +241,10 @@ namespace AsteroidsGame
                 ) * 3;
 
                 // Draw thruster lines directly without allocating an array
-                DrawLine(thrusterBase, thrusterLeft, Color.White, 1);
-                DrawLine(thrusterLeft, thrusterTip, Color.White, 1);
-                DrawLine(thrusterTip, thrusterRight, Color.White, 1);
-                DrawLine(thrusterRight, thrusterBase, Color.White, 1);
+                DrawLine(thrusterBase, thrusterLeft, playerColor, 1);
+                DrawLine(thrusterLeft, thrusterTip, playerColor, 1);
+                DrawLine(thrusterTip, thrusterRight, playerColor, 1);
+                DrawLine(thrusterRight, thrusterBase, playerColor, 1);
             }
         }
 
@@ -233,11 +259,110 @@ namespace AsteroidsGame
             DrawLine(start, end, Color.White, 1);
         }
 
+        // Update your DrawAsteroid method in the Renderer class
+
         public void DrawAsteroid(Asteroid asteroid)
         {
-            // Draw asteroid as a vector outline
+            // Choose color based on asteroid type
+            Color asteroidColor;
+
+            if (asteroid.Type == AsteroidType.Gold)
+            {
+                // Gold/yellow color for gold asteroids
+                asteroidColor = new Color(255, 215, 0);  // Gold color (RGB: 255, 215, 0)
+            }
+            else
+            {
+                // Default white color for normal asteroids
+                asteroidColor = Color.White;
+            }
+
+            // Draw asteroid as a vector outline with the selected color
             Vector2[] shape = GetAsteroidVectors(asteroid.Size, asteroid.ShapeIndex);
-            DrawVectorShape(shape, asteroid.Position, asteroid.Rotation, Color.White);
+            DrawVectorShape(shape, asteroid.Position, asteroid.Rotation, asteroidColor);
+
+            // For gold asteroids, add a subtle glow effect by drawing a second, slightly larger outline
+            if (asteroid.Type == AsteroidType.Gold)
+            {
+                // Scale the shape slightly larger for the glow effect
+                Vector2[] glowShape = new Vector2[shape.Length];
+                for (int i = 0; i < shape.Length; i++)
+                {
+                    glowShape[i] = shape[i] * 1.1f;  // 10% larger
+                }
+
+                // Draw the glow with reduced opacity
+                Color glowColor = new Color(255, 215, 0, 128);  // Semi-transparent gold
+                DrawVectorShape(glowShape, asteroid.Position, asteroid.Rotation, glowColor);
+            }
+        }
+        // Update the DrawEnemyShip method in your Renderer class
+
+        public void DrawEnemyShip(EnemyShip enemyShip)
+        {
+            // Create a UFO-like shape
+            Vector2[] ufoShape = new Vector2[]
+            {
+        // Top dome
+        new Vector2(-5, -2),   // Left top edge
+        new Vector2(-10, 0),   // Left middle
+        new Vector2(-15, 5),   // Left bottom edge
+        new Vector2(-10, 8),   // Left cabin bottom
+        new Vector2(10, 8),    // Right cabin bottom
+        new Vector2(15, 5),    // Right bottom edge
+        new Vector2(10, 0),    // Right middle
+        new Vector2(5, -2),    // Right top edge
+        new Vector2(-5, -2),   // Back to start to close shape
+        
+        // Draw cabin (separate shape)
+        new Vector2(-10, 0),   // Left cabin top
+        new Vector2(-8, 8),    // Left cabin bottom
+        new Vector2(8, 8),     // Right cabin bottom
+        new Vector2(10, 0),    // Right cabin top
+        new Vector2(-10, 0),   // Back to start to close cabin
+            };
+
+            // Draw the UFO in a purplish color
+            Color ufoColor = new Color(200, 150, 255);  // Light purple
+            DrawVectorShape(ufoShape, enemyShip.Position, 0, ufoColor);
+
+            // Add blinking lights around the edge
+            float time = (float)DateTime.Now.Millisecond / 1000.0f;
+            DrawBlinkingLights(enemyShip.Position, time);
+        }
+
+        // Helper method to draw blinking lights around the UFO
+        private void DrawBlinkingLights(Vector2 position, float time)
+        {
+            // Draw 6 lights around the edge that blink in sequence
+            int numLights = 6;
+            for (int i = 0; i < numLights; i++)
+            {
+                // Calculate light position around the saucer
+                float angle = i * MathHelper.TwoPi / numLights;
+                Vector2 lightPos = new Vector2(
+                    position.X + (float)Math.Cos(angle) * 12,
+                    position.Y + (float)Math.Sin(angle) * 6 + 4  // Offset to bottom half
+                );
+
+                // Calculate blinking pattern - lights turn on in sequence
+                float blinkPhase = (time * 5 + i * MathHelper.TwoPi / numLights) % MathHelper.TwoPi;
+                bool lightOn = blinkPhase < MathHelper.PiOver2;
+
+                // Draw the light as a small dot
+                if (lightOn)
+                {
+                    // Alternate between two colors
+                    Color lightColor = i % 2 == 0 ? Color.Yellow : Color.Red;
+
+                    // Draw a tiny rectangle for the light
+                    _spriteBatch.Draw(
+                        _pixelTexture,
+                        new Rectangle((int)lightPos.X - 1, (int)lightPos.Y - 1, 2, 2),
+                        lightColor
+                    );
+                }
+            }
         }
 
         private void DrawVectorShape(Vector2[] points, Vector2 position, float rotation, Color color)
@@ -278,8 +403,10 @@ namespace AsteroidsGame
             return new Vector2(rotatedX + position.X, rotatedY + position.Y);
         }
 
+        // Updated DrawUI signature to match the expected parameter count
         public void DrawUI(int score, int lives, bool gameOver)
         {
+            // Original implementation
             if (_font != null)
             {
                 // Draw score and lives
@@ -314,6 +441,25 @@ namespace AsteroidsGame
                         new Vector2(GameConstants.ScreenWidth / 2 - 150, GameConstants.ScreenHeight / 2),
                         Color.White);
                 }
+            }
+        }
+
+        // Alternative version with difficulty info
+        public void DrawUI(int score, int lives, bool gameOver, int difficultyLevel, float speedMultiplier)
+        {
+            // Draw basic UI first
+            DrawUI(score, lives, gameOver);
+
+            // Add difficulty info if applicable
+            if (difficultyLevel > 0 && _font != null)
+            {
+                string difficultyText = $"Level: {difficultyLevel}  Speed: {speedMultiplier:F2}x";
+                _spriteBatch.DrawString(_font, difficultyText, new Vector2(10, 70), Color.Yellow);
+            }
+            else if (difficultyLevel > 0)
+            {
+                // Fallback text rendering
+                DrawText($"Level: {difficultyLevel}  Speed: {speedMultiplier:F2}x", new Vector2(10, 70), Color.Yellow);
             }
         }
 

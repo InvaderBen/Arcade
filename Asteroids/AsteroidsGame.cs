@@ -64,6 +64,14 @@ namespace AsteroidsGame
         private readonly int _minWindowWidth = 640;
         private readonly int _minWindowHeight = 480;
 
+        private DifficultyManager _difficultyManager;
+        private List<EnemyShip> _enemyShips;
+        private List<EnemyShip> _enemyShipPool;
+        private const int MaxEnemyShips = 3;
+
+        private float _respawnTimer = 0f;
+
+
         public Game1()
         {
             _graphics = new GraphicsDeviceManager(this);
@@ -90,6 +98,65 @@ namespace AsteroidsGame
             _oldWindowSize = new Point(_graphics.PreferredBackBufferWidth, _graphics.PreferredBackBufferHeight);
             _scaleMatrix = Matrix.Identity;
             _virtualViewport = new Rectangle(0, 0, GameConstants.ScreenWidth, GameConstants.ScreenHeight);
+        }
+
+
+        private void ForceSpawnEnemyShip()
+        {
+            // Create a spawn position at the top of the screen
+            // Choose a random X position
+            Vector2 position = new Vector2(
+                _random.Next(50, GameConstants.ScreenWidth - 50),  // Random X position
+                40  // Fixed Y position at the top
+            );
+
+            // Create a new enemy ship
+            EnemyShip enemyShip = new EnemyShip(
+                position,
+                _renderer.ShipTexture,
+                _player,
+                _renderer.BulletTexture,
+                AddEnemyBullet
+            );
+
+            // Add it to the active enemy ships list
+            _enemyShips.Add(enemyShip);
+        }
+
+        private void ForceSpawnGoldAsteroid(AsteroidSize size = AsteroidSize.Large)
+        {
+            // Get a random edge position
+            Vector2 position = GetRandomEdgePosition();
+
+            // Create velocity for the asteroid
+            Vector2 velocity = GetRandomAsteroidVelocity(position);
+
+            // Apply difficulty scaling if using difficulty manager
+            if (_difficultyManager != null)
+            {
+                velocity *= _difficultyManager.GetSpeedMultiplier();
+            }
+
+            // Apply speed controller if using it
+            if (typeof(GameSpeedController) != null)
+            {
+                velocity *= GameSpeedController.AsteroidSpeed;
+            }
+
+            // Get the appropriate texture
+            Texture2D texture = _renderer.GetAsteroidTexture(size);
+
+            // Create a gold asteroid
+            Asteroid goldAsteroid = new Asteroid(
+                position,
+                velocity,
+                texture,
+                size,
+                AsteroidType.Gold  // Gold type
+            );
+
+            // Add it to the active asteroids list
+            _asteroids.Add(goldAsteroid);
         }
 
         private void Window_ClientSizeChanged(object sender, EventArgs e)
@@ -168,6 +235,11 @@ namespace AsteroidsGame
             _collisionManager = new CollisionManager();
             _highScoreManager = new HighScoreManager();
 
+
+            _difficultyManager = new DifficultyManager();
+            _enemyShips = new List<EnemyShip>();
+            _enemyShipPool = new List<EnemyShip>();
+
             // Initialize scaling
             UpdateScaling();
 
@@ -221,8 +293,66 @@ namespace AsteroidsGame
             }
         }
 
+        // Create a method to spawn enemy ships
+        private void SpawnEnemyShip()
+        {
+            // Pick a random edge for spawning
+            Vector2 position = GetRandomEdgePosition();
+
+            // Get enemy ship from pool if available
+            EnemyShip enemyShip = null;
+            if (_enemyShipPool.Count > 0)
+            {
+                enemyShip = _enemyShipPool[_enemyShipPool.Count - 1];
+                _enemyShipPool.RemoveAt(_enemyShipPool.Count - 1);
+
+                // Reset position
+                enemyShip.Position = position;
+            }
+            else
+            {
+                // Create a new enemy ship if pool is empty
+                enemyShip = new EnemyShip(
+                    position,
+                    _renderer.ShipTexture, // Using same texture as player for now
+                    _player,
+                    _renderer.BulletTexture,
+                    AddEnemyBullet
+                );
+            }
+
+            _enemyShips.Add(enemyShip);
+        }
+        private void AddEnemyBullet(Vector2 position, Vector2 velocity)
+        {
+            Bullet bullet;
+
+            // Try to get a bullet from the pool
+            if (_bulletPool.Count > 0)
+            {
+                bullet = _bulletPool[_bulletPool.Count - 1];
+                _bulletPool.RemoveAt(_bulletPool.Count - 1);
+
+                // Reset the bullet properties - mark as enemy bullet (not player bullet)
+                bullet.Position = position;
+                bullet.Velocity = velocity;
+                bullet.ResetLifetime();
+                bullet.IsPlayerBullet = false; // Mark as enemy bullet
+            }
+            else
+            {
+                // Create a new bullet if the pool is empty - mark as enemy bullet
+                bullet = new Bullet(position, velocity, _renderer.BulletTexture, false);
+            }
+
+            _bullets.Add(bullet);
+        }
+
+
         protected override void Update(GameTime gameTime)
         {
+
+
             // Check if window has been resized
             if (_isResizing || Window.ClientBounds.Width != _oldWindowSize.X || Window.ClientBounds.Height != _oldWindowSize.Y)
             {
@@ -300,15 +430,78 @@ namespace AsteroidsGame
             // Handle controller vibration if active
             if (_vibrateController)
             {
-                _vibrationTime += deltaTime;
-                if (_vibrationTime >= MaxVibrationTime)
+                _vibrationTime -= deltaTime;
+                if (_vibrationTime <= 0)
                 {
                     // Stop vibration after time limit
                     GamePad.SetVibration(PlayerIndex.One, 0f, 0f);
                     _vibrateController = false;
-                    _vibrationTime = 0f;
                 }
             }
+
+            // Update respawn timer
+            if (_respawnTimer > 0)
+            {
+                _respawnTimer -= deltaTime;
+
+                // Don't spawn asteroids while in respawn delay
+                if (_respawnTimer <= 0)
+                {
+                    // Respawn timer completed, spawn initial asteroids
+                    for (int i = 0; i < 2; i++) // Spawn fewer asteroids initially for safety
+                    {
+                        SpawnAsteroid(AsteroidSize.Large);
+                    }
+                }
+            }
+            else
+            {
+                // Normal asteroid spawning - only if respawn timer is complete
+                if (_asteroids.Count < _difficultyManager.GetMaxAsteroids() && _random.Next(100) < 1)
+                {
+                    SpawnAsteroid(AsteroidSize.Large);
+                }
+            }
+
+            // Handle player movement
+            _player.HandleInput(_inputManager);
+            _player.Update(deltaTime);
+
+            // Fire bullets
+            if (_inputManager.IsFirePressed() && _player.CanFire())
+            {
+                AddBullet(_player.GetBulletPosition(), _player.GetBulletVelocity());
+            }
+
+            // Test feature shortcuts
+            if (_inputManager.IsKeyPressed(Keys.G))
+            {
+                // Spawn gold asteroid with G key
+                ForceSpawnGoldAsteroid();
+            }
+
+            if (_inputManager.IsKeyPressed(Keys.E))
+            {
+                // Spawn enemy ship with E key
+                ForceSpawnEnemyShip();
+            }
+
+
+            // Update difficulty based on score
+            _difficultyManager.UpdateDifficulty(_score);
+
+            // Check if we should spawn an enemy ship
+            if (_difficultyManager.ShouldSpawnEnemyShip() && _enemyShips.Count < MaxEnemyShips)
+            {
+                SpawnEnemyShip();
+            }
+
+            // Update enemy ships
+            for (int i = _enemyShips.Count - 1; i >= 0; i--)
+            {
+                _enemyShips[i].Update(deltaTime);
+            }
+
 
             // Handle player movement
             _player.HandleInput(_inputManager);
@@ -340,8 +533,8 @@ namespace AsteroidsGame
             // Check for collisions
             HandleCollisions();
 
-            // Possibly spawn new asteroids
-            if (_asteroids.Count < GameConstants.MaxAsteroids && _random.Next(100) < 1)
+            // Possibly spawn new asteroids - updated to use difficulty manager's max asteroids
+            if (_asteroids.Count < _difficultyManager.GetMaxAsteroids() && _random.Next(100) < 1)
             {
                 SpawnAsteroid(AsteroidSize.Large);
             }
@@ -463,23 +656,47 @@ namespace AsteroidsGame
 
         private void DrawPlaying()
         {
-            // Draw game objects
+            // Draw player
             _renderer.DrawPlayer(_player);
 
+            // Draw asteroids
             foreach (var asteroid in _asteroids)
             {
                 _renderer.DrawAsteroid(asteroid);
             }
 
+            // Draw enemy ships
+            foreach (var enemyShip in _enemyShips)
+            {
+                _renderer.DrawEnemyShip(enemyShip);
+            }
+
+            // Draw bullets
             foreach (var bullet in _bullets)
             {
                 _renderer.DrawBullet(bullet);
             }
 
-            // Draw UI elements - only if not in game over state
+            // Draw UI elements - use the correct method signature
             if (_gameState != GameState.GameOver)
             {
-                _renderer.DrawUI(_score, _lives, false);
+                // Check if we're using difficulty manager
+                if (_difficultyManager != null)
+                {
+                    // Use the 5-parameter version
+                    _renderer.DrawUI(
+                        _score,
+                        _lives,
+                        false,
+                        _difficultyManager.GetDifficultyLevel(),
+                        _difficultyManager.GetSpeedMultiplier()
+                    );
+                }
+                else
+                {
+                    // Use the 3-parameter version
+                    _renderer.DrawUI(_score, _lives, false);
+                }
             }
         }
 
@@ -577,44 +794,75 @@ namespace AsteroidsGame
             _asteroids.RemoveAt(index);
             _asteroidPool.Add(asteroid);
         }
-
         private void HandleCollisions()
         {
-            // Check player-asteroid collisions
-            for (int i = _asteroids.Count - 1; i >= 0; i--)
+            // PLAYER COLLISIONS - skip if player is invulnerable
+            if (!_player.IsInvulnerable())
             {
-                if (_collisionManager.CheckCollision(_player, _asteroids[i]))
+                // Check player-asteroid collisions
+                for (int i = _asteroids.Count - 1; i >= 0; i--)
                 {
-                    _lives--;
-                    _player.Reset(new Vector2(GameConstants.ScreenWidth / 2, GameConstants.ScreenHeight / 2));
+                    if (_collisionManager.CheckCollision(_player, _asteroids[i]))
+                    {
+                        // Call player death method
+                        PlayerDeath();
+                        return; // Exit immediately - field is now clear
+                    }
+                }
 
-                    // Vibrate controller when player is hit
-                    GamePad.SetVibration(PlayerIndex.One, 0.5f, 0.5f);
-                    _vibrateController = true;
-                    _vibrationTime = 0f;
+                // Check player-enemy ship collisions
+                for (int i = _enemyShips.Count - 1; i >= 0; i--)
+                {
+                    if (_collisionManager.CheckCollision(_player, _enemyShips[i]))
+                    {
+                        // Call player death method
+                        PlayerDeath();
+                        return; // Exit immediately - field is now clear
+                    }
+                }
 
-                    break;
+                // Check player-enemy bullet collisions
+                for (int i = _bullets.Count - 1; i >= 0; i--)
+                {
+                    // Skip player bullets, only check enemy bullets
+                    if (_bullets[i].IsPlayerBullet)
+                        continue;
+
+                    if (_collisionManager.CheckCollision(_player, _bullets[i]))
+                    {
+                        // Recycle the enemy bullet
+                        RecycleBullet(i);
+
+                        // Call player death method
+                        PlayerDeath();
+                        return; // Exit immediately - field is now clear
+                    }
                 }
             }
 
-            // Check bullet-asteroid collisions - optimized
+            // PLAYER BULLET COLLISIONS
             for (int i = _bullets.Count - 1; i >= 0; i--)
             {
+                // Skip enemy bullets, only process player bullets
+                if (!_bullets[i].IsPlayerBullet)
+                    continue;
+
                 bool bulletRemoved = false;
 
+                // Check bullet-asteroid collisions
                 for (int j = _asteroids.Count - 1; j >= 0; j--)
                 {
                     if (_collisionManager.CheckCollision(_bullets[i], _asteroids[j]))
                     {
+                        // Get points based on asteroid type and size
+                        _score += _asteroids[j].GetPointValue();
+
                         // Split the asteroid
                         SplitAsteroid(_asteroids[j]);
 
                         // Recycle asteroid and bullet
                         RecycleAsteroid(j);
                         RecycleBullet(i);
-
-                        // Update score
-                        _score += GameConstants.AsteroidPoints;
 
                         // Small vibration feedback when hitting an asteroid
                         GamePad.SetVibration(PlayerIndex.One, 0.2f, 0.2f);
@@ -626,10 +874,41 @@ namespace AsteroidsGame
                     }
                 }
 
+                // Check bullet-enemy ship collisions
+                if (!bulletRemoved)
+                {
+                    for (int j = _enemyShips.Count - 1; j >= 0; j--)
+                    {
+                        if (_collisionManager.CheckCollision(_bullets[i], _enemyShips[j]))
+                        {
+                            // Damage the enemy ship
+                            if (_enemyShips[j].TakeDamage())
+                            {
+                                // Enemy ship destroyed - add points
+                                _score += GameConstants.EnemyShipPoints;
+
+                                // Recycle enemy ship
+                                _enemyShipPool.Add(_enemyShips[j]);
+                                _enemyShips.RemoveAt(j);
+                            }
+
+                            // Recycle bullet
+                            RecycleBullet(i);
+
+                            // Vibration feedback
+                            GamePad.SetVibration(PlayerIndex.One, 0.3f, 0.3f);
+                            _vibrateController = true;
+                            _vibrationTime = 0f;
+
+                            bulletRemoved = true;
+                            break;
+                        }
+                    }
+                }
+
                 if (bulletRemoved) break;
             }
         }
-
         private void SpawnAsteroid(AsteroidSize size)
         {
             // Determine spawn position (at screen edge)
@@ -705,6 +984,8 @@ namespace AsteroidsGame
             return direction * speed;
         }
 
+
+        // Update the Split Asteroid method for gold asteroids
         private void SplitAsteroid(Asteroid asteroid)
         {
             if (asteroid.Size != AsteroidSize.Small)
@@ -723,8 +1004,14 @@ namespace AsteroidsGame
                     // Add some speed to smaller asteroids
                     newVelocity *= 1.2f;
 
+                    // Apply difficulty scaling
+                    newVelocity *= _difficultyManager.GetSpeedMultiplier();
+
                     // Get texture for the new size
                     Texture2D newTexture = _renderer.GetAsteroidTexture(newSize);
+
+                    // Determine if this should be a gold asteroid - preserve the gold status
+                    AsteroidType asteroidType = asteroid.Type;
 
                     // Try to get an asteroid from the pool
                     Asteroid newAsteroid = null;
@@ -746,13 +1033,76 @@ namespace AsteroidsGame
                     // Create a new asteroid if none available in pool
                     if (newAsteroid == null)
                     {
-                        newAsteroid = new Asteroid(asteroid.Position, newVelocity, newTexture, newSize);
+                        newAsteroid = new Asteroid(asteroid.Position, newVelocity, newTexture, newSize, asteroidType);
                     }
 
                     _asteroids.Add(newAsteroid);
                 }
             }
         }
+
+        // Add this method to clear all dangerous objects
+        private void ClearPlayingField()
+        {
+            // Return all active asteroids to pool
+            foreach (var asteroid in _asteroids)
+            {
+                _asteroidPool.Add(asteroid);
+            }
+            _asteroids.Clear();
+
+            // Return all enemy ships to pool
+            foreach (var ship in _enemyShips)
+            {
+                _enemyShipPool.Add(ship);
+            }
+            _enemyShips.Clear();
+
+            // Return all bullets to pool
+            foreach (var bullet in _bullets)
+            {
+                _bulletPool.Add(bullet);
+            }
+            _bullets.Clear();
+        }
+
+        private void PlayerDeath()
+        {
+            // Decrease lives
+            _lives--;
+
+            // Clear all dangerous objects
+            ClearPlayingField();
+
+            // If game isn't over, reset player position
+            if (_lives > 0)
+            {
+                // Reset player to center
+                _player.Reset(new Vector2(GameConstants.ScreenWidth / 2, GameConstants.ScreenHeight / 2));
+
+                // Controller vibration
+                GamePad.SetVibration(PlayerIndex.One, 0.5f, 0.5f);
+                _vibrateController = true;
+                _vibrationTime = 0.5f;
+
+                // Delay before spawning new asteroids (give player breathing room)
+                _respawnTimer = 2.0f; // Add this as a class field: private float _respawnTimer = 0f;
+            }
+            else
+            {
+                // Game over
+                _gameOver = true;
+                _gameState = GameState.GameOver;
+
+                // Check for high score
+                if (_highScoreManager.IsHighScore(_score))
+                {
+                    _gameState = GameState.NameEntry;
+                    _highScoreManager.StartNameEntry(_score);
+                }
+            }
+        }
+
 
         private void StartNewGame()
         {
@@ -784,9 +1134,43 @@ namespace AsteroidsGame
             }
         }
 
+        // Update RestartGame method to reset difficulty
         private void RestartGame()
         {
-            StartNewGame();
+            _score = 0;
+            _lives = GameConstants.InitialLives;
+            _gameOver = false;
+
+            // Reset difficulty
+            _difficultyManager.Reset();
+
+            // Return all active game objects to their pools
+            foreach (var bullet in _bullets)
+            {
+                _bulletPool.Add(bullet);
+            }
+
+            foreach (var asteroid in _asteroids)
+            {
+                _asteroidPool.Add(asteroid);
+            }
+
+            foreach (var enemyShip in _enemyShips)
+            {
+                _enemyShipPool.Add(enemyShip);
+            }
+
+            _bullets.Clear();
+            _asteroids.Clear();
+            _enemyShips.Clear();
+
+            _player.Reset(new Vector2(GameConstants.ScreenWidth / 2, GameConstants.ScreenHeight / 2));
+
+            // Create initial asteroids
+            for (int i = 0; i < GameConstants.InitialAsteroidCount; i++)
+            {
+                SpawnAsteroid(AsteroidSize.Large);
+            }
         }
     }
 }

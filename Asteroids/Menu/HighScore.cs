@@ -64,6 +64,26 @@ namespace AsteroidsGame
             return _highScores.Count < MaxHighScores || score > _highScores.Min(x => x.Score);
         }
 
+        // Check if this player name already exists in high scores
+        public bool PlayerExists(string name)
+        {
+            return _highScores.Any(x => x.PlayerName.Equals(name, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // Find the existing score for this player
+        public int GetExistingScore(string name)
+        {
+            var entry = _highScores.FirstOrDefault(x => x.PlayerName.Equals(name, StringComparison.OrdinalIgnoreCase));
+            return entry?.Score ?? 0;
+        }
+
+        // Check if the new score is higher than the existing score for this player
+        public bool IsHigherScore(string name, int score)
+        {
+            int existingScore = GetExistingScore(name);
+            return score > existingScore;
+        }
+
         public void StartNameEntry(int score)
         {
             _pendingScore = new ScoreEntry(_currentName, score);
@@ -75,7 +95,31 @@ namespace AsteroidsGame
             if (_isEnteringName && !string.IsNullOrEmpty(_currentName))
             {
                 _pendingScore.PlayerName = _currentName;
-                AddHighScore(_pendingScore);
+
+                // Check if player already exists
+                var existingEntry = _highScores.FirstOrDefault(x =>
+                    x.PlayerName.Equals(_pendingScore.PlayerName, StringComparison.OrdinalIgnoreCase));
+
+                if (existingEntry != null)
+                {
+                    // Player exists - update score if new score is higher
+                    if (_pendingScore.Score > existingEntry.Score)
+                    {
+                        existingEntry.Score = _pendingScore.Score;
+                        existingEntry.Date = DateTime.Now;
+                    }
+                }
+                else
+                {
+                    // New player - add to high scores
+                    _highScores.Add(_pendingScore);
+                }
+
+                // Keep only the top scores, sorted by score (descending)
+                _highScores = _highScores.OrderByDescending(x => x.Score).Take(MaxHighScores).ToList();
+
+                SaveHighScores();
+
                 _isEnteringName = false;
                 _currentName = "Player"; // Reset for next time
             }
@@ -89,7 +133,24 @@ namespace AsteroidsGame
 
         private void AddHighScore(ScoreEntry entry)
         {
-            _highScores.Add(entry);
+            // First check if player already exists
+            var existingEntry = _highScores.FirstOrDefault(x =>
+                x.PlayerName.Equals(entry.PlayerName, StringComparison.OrdinalIgnoreCase));
+
+            if (existingEntry != null)
+            {
+                // Update score if new score is higher
+                if (entry.Score > existingEntry.Score)
+                {
+                    existingEntry.Score = entry.Score;
+                    existingEntry.Date = DateTime.Now;
+                }
+            }
+            else
+            {
+                // Add new entry
+                _highScores.Add(entry);
+            }
 
             // Keep only the top scores, sorted by score (descending)
             _highScores = _highScores.OrderByDescending(x => x.Score).Take(MaxHighScores).ToList();

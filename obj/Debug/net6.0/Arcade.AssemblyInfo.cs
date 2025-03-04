@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Arcade")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+723cef5009334a0063d464118cf26d6136e0fe8b")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ce252c9c37e185cc8ec5deb94375020ff49b1687")]
 [assembly: System.Reflection.AssemblyProductAttribute("Arcade")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Arcade")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

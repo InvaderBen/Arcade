@@ -14,7 +14,7 @@
         public const int InitialLives = 3;
 
         // Bullet settings
-        public const float BulletSpeed = 500.0f;  // Increased bullet speed
+        public const float BulletSpeed = 500.0f;
         public const float BulletLifetime = 2.0f;
 
         // Asteroid settings
@@ -24,11 +24,27 @@
         public const float AsteroidMaxSpeed = 120.0f;
         public const int AsteroidPoints = 100;
 
-        // Collision detection
-        public const float CollisionScale = 0.75f;  // More forgiving collisions
+        // Special asteroid settings
+        public const int GoldAsteroidPoints = 500;
+        public const float GoldAsteroidChance = 0.1f; // 10% chance of spawning a gold asteroid
+        public const float GoldAsteroidSpeedMultiplier = 1.5f;
 
-        // Visual style
-        public const bool UseVectorGraphics = true;  // Use vector outlines instead of filled shapes
+        // Enemy ship settings
+        public const int EnemyShipPoints = 1000;
+        public const float EnemyShipSpeed = 150.0f;
+        public const float EnemyShipFireRate = 1.5f;
+        public const int EnemyShipScoreThreshold = 50000;
+
+        // Difficulty progression
+        public const int DifficultyIncreaseThreshold = 10000; // Increase difficulty every 10k points
+        public const float SpeedIncreaseFactor = 0.15f; // 15% speed increase per difficulty level
+        public const float MaxSpeedMultiplier = 2.5f; // Maximum speed is 2.5x the base speed
+        public const int AsteroidFrequencyIncrease = 1; // Increase max asteroids by 1 per difficulty level
+        public const int MaxAsteroidLimit = 20; // Maximum number of asteroids regardless of difficulty
+
+        // Visual settings
+        public const bool UseVectorGraphics = true;
+        public const float CollisionScale = 0.75f;  // More forgiving collisions
     }
 
     public enum AsteroidSize
@@ -36,5 +52,11 @@
         Small,
         Medium,
         Large
+    }
+
+    public enum AsteroidType
+    {
+        Normal,
+        Gold
     }
 }
