@@ -5,33 +5,13 @@ using System.Collections.Generic;
 
 namespace AsteroidsGame
 {
-    // Simple utility classes just for menu rendering
-    internal class MenuObject
-    {
-        public Vector2 Position;
-        public Vector2 Velocity;
-        public Vector2[] Points;
-        public float Rotation;
-        public float RotationSpeed;
-        public float Lifetime;
-        public bool IsAsteroid;
-        public bool IsBullet;
-        public bool IsShip;
-
-        public void Update(float deltaTime)
-        {
-            Position += Velocity * deltaTime;
-            Rotation += RotationSpeed * deltaTime;
-            if (IsBullet) Lifetime += deltaTime;
-        }
-    }
-
     public class MenuRenderer
     {
         private SpriteBatch _spriteBatch;
         private Texture2D _pixelTexture;
         private SpriteFont _font;
         private Random _random;
+        private VectorTitleRenderer _titleRenderer;
 
         // Menu options
         private List<string> _mainMenuOptions;
@@ -44,7 +24,8 @@ namespace AsteroidsGame
         private float _attackTimer;
         private const float BulletDelay = 0.25f;
         private const float AttackDelay = 2.0f;
-        private const int NumAsteroids = 12;
+        private const int NumAsteroids = 8; // Reduced initial count for faster loading
+        private const int MaxAsteroids = 12;
 
         // Title animation
         private float _titlePulse;
@@ -53,6 +34,19 @@ namespace AsteroidsGame
         // Name entry animation
         private float _cursorBlinkTimer;
         private bool _showCursor;
+
+        // Cached vectors to reduce GC
+        private Vector2 _tempVector = new Vector2();
+        private Vector2 _tempVector2 = new Vector2();
+        private Vector2 _tempDirection = new Vector2();
+
+        // Cached object arrays
+        private MenuObject[] _tempAsteroidArray;
+        private List<MenuObject> _asteroidsToAdd = new List<MenuObject>();
+        private List<int> _objectsToRemove = new List<int>();
+
+        // Initialization status
+        private bool _fullyInitialized = false;
 
         public MenuRenderer(GraphicsDevice graphicsDevice, SpriteBatch spriteBatch, SpriteFont font)
         {
@@ -64,6 +58,9 @@ namespace AsteroidsGame
             _pixelTexture = new Texture2D(graphicsDevice, 1, 1);
             _pixelTexture.SetData(new[] { Color.White });
 
+            // Create title renderer
+            _titleRenderer = new VectorTitleRenderer(graphicsDevice, spriteBatch);
+
             // Initialize menu options
             _mainMenuOptions = new List<string>
             {
@@ -73,25 +70,37 @@ namespace AsteroidsGame
             };
             _selectedOption = 0;
 
-            // Initialize background gameplay elements
+            // Initialize animations
+            _titlePulse = 0f;
+            _cursorBlinkTimer = 0f;
+            _showCursor = true;
+
+            // Defer the expensive background creation until needed
+            // Initialize with empty lists
             _menuObjects = new List<MenuObject>();
             _bulletTimer = 0f;
             _attackTimer = 0f;
+
+            // Initialize the temp arrays
+            _tempAsteroidArray = new MenuObject[MaxAsteroids];
+        }
+
+        public void EnsureInitialized()
+        {
+            if (_fullyInitialized)
+                return;
 
             // Create ship
             _menuShip = CreateShip();
             _menuObjects.Add(_menuShip);
 
-            // Create initial asteroids
+            // Create initial asteroids - fewer at first, will add more over time
             for (int i = 0; i < NumAsteroids; i++)
             {
                 _menuObjects.Add(CreateRandomAsteroid());
             }
 
-            // Initialize animations
-            _titlePulse = 0f;
-            _cursorBlinkTimer = 0f;
-            _showCursor = true;
+            _fullyInitialized = true;
         }
 
         private MenuObject CreateShip()
@@ -118,14 +127,15 @@ namespace AsteroidsGame
         private MenuObject CreateRandomAsteroid()
         {
             // Pick location outside the center area
-            Vector2 position;
-            do
+            _tempVector.X = _random.Next(GameConstants.ScreenWidth);
+            _tempVector.Y = _random.Next(GameConstants.ScreenHeight);
+
+            // Keep trying until we're far enough from center
+            while (Vector2.Distance(_tempVector, new Vector2(GameConstants.ScreenWidth / 2, GameConstants.ScreenHeight / 2)) < 150)
             {
-                position = new Vector2(
-                    _random.Next(GameConstants.ScreenWidth),
-                    _random.Next(GameConstants.ScreenHeight)
-                );
-            } while (Vector2.Distance(position, new Vector2(GameConstants.ScreenWidth / 2, GameConstants.ScreenHeight / 2)) < 150);
+                _tempVector.X = _random.Next(GameConstants.ScreenWidth);
+                _tempVector.Y = _random.Next(GameConstants.ScreenHeight);
+            }
 
             // Random size
             int size = 10 + _random.Next(30);
@@ -148,15 +158,14 @@ namespace AsteroidsGame
             // Random velocity
             float angle = (float)_random.NextDouble() * MathHelper.TwoPi;
             float speed = 30f + (float)_random.NextDouble() * 50f;
-            Vector2 velocity = new Vector2(
-                (float)Math.Cos(angle) * speed,
-                (float)Math.Sin(angle) * speed
-            );
+
+            _tempVector2.X = (float)Math.Cos(angle) * speed;
+            _tempVector2.Y = (float)Math.Sin(angle) * speed;
 
             return new MenuObject
             {
-                Position = position,
-                Velocity = velocity,
+                Position = _tempVector,
+                Velocity = _tempVector2,
                 Points = points,
                 Rotation = (float)_random.NextDouble() * MathHelper.TwoPi,
                 RotationSpeed = (float)(_random.NextDouble() - 0.5) * 2.0f,
@@ -169,8 +178,8 @@ namespace AsteroidsGame
             return new MenuObject
             {
                 Position = position,
-                Velocity = direction * 500f,
-                Points = new Vector2[] { Vector2.Zero, direction * 8 },
+                Velocity = new Vector2(direction.X * 500f, direction.Y * 500f),
+                Points = new Vector2[] { Vector2.Zero, new Vector2(direction.X * 8, direction.Y * 8) },
                 Rotation = 0f,
                 RotationSpeed = 0f,
                 Lifetime = 0f,
@@ -180,15 +189,14 @@ namespace AsteroidsGame
 
         public void Update(float deltaTime, InputManager inputManager)
         {
+            // Ensure all background elements are initialized
+            EnsureInitialized();
+
+            // Update title animation via the dedicated renderer
+            _titleRenderer.Update(deltaTime);
+
             // Update background gameplay elements
             UpdateGameplay(deltaTime);
-
-            // Update title animation
-            _titlePulse += deltaTime * PulseSpeed;
-            if (_titlePulse > MathHelper.TwoPi)
-            {
-                _titlePulse -= MathHelper.TwoPi;
-            }
 
             // Update cursor blink animation
             _cursorBlinkTimer += deltaTime;
@@ -223,12 +231,23 @@ namespace AsteroidsGame
                 MenuObject target = FindNearestAsteroid();
                 if (target != null)
                 {
-                    // Turn toward target
-                    Vector2 direction = Vector2.Normalize(target.Position - _menuShip.Position);
-                    _menuShip.Rotation = (float)Math.Atan2(direction.Y, direction.X) + MathHelper.PiOver2;
+                    // Turn toward target - reuse vectors
+                    _tempDirection.X = target.Position.X - _menuShip.Position.X;
+                    _tempDirection.Y = target.Position.Y - _menuShip.Position.Y;
+
+                    // Normalize
+                    float length = _tempDirection.Length();
+                    if (length > 0)
+                    {
+                        _tempDirection.X /= length;
+                        _tempDirection.Y /= length;
+                    }
+
+                    _menuShip.Rotation = (float)Math.Atan2(_tempDirection.Y, _tempDirection.X) + MathHelper.PiOver2;
 
                     // Move toward target aggressively
-                    _menuShip.Velocity = direction * 200f;
+                    _menuShip.Velocity.X = _tempDirection.X * 200f;
+                    _menuShip.Velocity.Y = _tempDirection.Y * 200f;
 
                     // Reset attack timer
                     _attackTimer = AttackDelay * (0.5f + (float)_random.NextDouble());
@@ -236,10 +255,8 @@ namespace AsteroidsGame
                 else
                 {
                     // No targets, move randomly
-                    _menuShip.Velocity = new Vector2(
-                        (float)(_random.NextDouble() - 0.5) * 200f,
-                        (float)(_random.NextDouble() - 0.5) * 200f
-                    );
+                    _menuShip.Velocity.X = (float)(_random.NextDouble() - 0.5) * 200f;
+                    _menuShip.Velocity.Y = (float)(_random.NextDouble() - 0.5) * 200f;
                     _menuShip.Rotation = (float)Math.Atan2(_menuShip.Velocity.Y, _menuShip.Velocity.X) + MathHelper.PiOver2;
                     _attackTimer = AttackDelay;
                 }
@@ -249,18 +266,20 @@ namespace AsteroidsGame
             _bulletTimer -= deltaTime;
             if (_bulletTimer <= 0f)
             {
-                Vector2 direction = new Vector2(
-                    (float)Math.Cos(_menuShip.Rotation - MathHelper.PiOver2),
-                    (float)Math.Sin(_menuShip.Rotation - MathHelper.PiOver2)
-                );
+                _tempVector.X = (float)Math.Cos(_menuShip.Rotation - MathHelper.PiOver2);
+                _tempVector.Y = (float)Math.Sin(_menuShip.Rotation - MathHelper.PiOver2);
 
                 // Add bullet to the list
-                _menuObjects.Add(CreateBullet(_menuShip.Position + direction * 15, direction));
+                _menuObjects.Add(CreateBullet(_menuShip.Position + new Vector2(_tempVector.X * 15, _tempVector.Y * 15), _tempVector));
                 _bulletTimer = BulletDelay;
             }
 
+            // Clear the removal list
+            _objectsToRemove.Clear();
+            _asteroidsToAdd.Clear();
+
             // Update all objects
-            for (int i = _menuObjects.Count - 1; i >= 0; i--)
+            for (int i = 0; i < _menuObjects.Count; i++)
             {
                 _menuObjects[i].Update(deltaTime);
 
@@ -270,17 +289,35 @@ namespace AsteroidsGame
                 // Remove bullets that exceed lifetime
                 if (_menuObjects[i].IsBullet && _menuObjects[i].Lifetime > 2.0f)
                 {
-                    _menuObjects.RemoveAt(i);
+                    _objectsToRemove.Add(i);
                 }
             }
 
             // Check for collisions between bullets and asteroids
             CheckCollisions();
 
+            // Remove objects (in reverse order to keep indices valid)
+            for (int i = _objectsToRemove.Count - 1; i >= 0; i--)
+            {
+                int index = _objectsToRemove[i];
+                if (index < _menuObjects.Count)
+                {
+                    _menuObjects.RemoveAt(index);
+                }
+            }
+
+            // Add new asteroids
+            foreach (var asteroid in _asteroidsToAdd)
+            {
+                _menuObjects.Add(asteroid);
+            }
+
             // Make sure we have enough asteroids
-            while (CountAsteroids() < NumAsteroids)
+            int asteroidCount = CountAsteroids();
+            while (asteroidCount < MaxAsteroids)
             {
                 _menuObjects.Add(CreateRandomAsteroid());
+                asteroidCount++;
             }
         }
 
@@ -293,7 +330,7 @@ namespace AsteroidsGame
             {
                 if (obj.IsAsteroid)
                 {
-                    float distance = Vector2.Distance(obj.Position, _menuShip.Position);
+                    float distance = Vector2.DistanceSquared(obj.Position, _menuShip.Position);
                     if (distance < minDistance)
                     {
                         minDistance = distance;
@@ -331,26 +368,27 @@ namespace AsteroidsGame
 
         private void CheckCollisions()
         {
-            for (int i = _menuObjects.Count - 1; i >= 0; i--)
+            for (int i = 0; i < _menuObjects.Count; i++)
             {
-                if (i >= _menuObjects.Count || !_menuObjects[i].IsBullet) continue;
+                if (!_menuObjects[i].IsBullet) continue;
 
-                for (int j = _menuObjects.Count - 1; j >= 0; j--)
+                for (int j = 0; j < _menuObjects.Count; j++)
                 {
-                    if (j >= _menuObjects.Count || i >= _menuObjects.Count || !_menuObjects[j].IsAsteroid) continue;
+                    if (!_menuObjects[j].IsAsteroid) continue;
 
-                    // Simple distance check
-                    if (Vector2.Distance(_menuObjects[i].Position, _menuObjects[j].Position) < GetObjectRadius(_menuObjects[j]))
+                    // Simple distance check - squared distance for better performance
+                    float radius = GetObjectRadius(_menuObjects[j]);
+                    if (Vector2.DistanceSquared(_menuObjects[i].Position, _menuObjects[j].Position) < radius * radius)
                     {
                         // Split or remove the asteroid
                         SplitAsteroid(_menuObjects[j]);
 
-                        // Remove asteroid and bullet
-                        if (i < _menuObjects.Count)
-                            _menuObjects.RemoveAt(i);
+                        // Mark for removal
+                        if (!_objectsToRemove.Contains(i))
+                            _objectsToRemove.Add(i);
 
-                        if (j < _menuObjects.Count && (j < i || i >= _menuObjects.Count))
-                            _menuObjects.RemoveAt(j);
+                        if (!_objectsToRemove.Contains(j))
+                            _objectsToRemove.Add(j);
 
                         // Stop checking this bullet
                         break;
@@ -387,23 +425,25 @@ namespace AsteroidsGame
                     for (int j = 0; j < vertices; j++)
                     {
                         // New points are 60% of original size
-                        newPoints[j] = asteroid.Points[j] * 0.6f;
+                        newPoints[j] = new Vector2(
+                            asteroid.Points[j].X * 0.6f,
+                            asteroid.Points[j].Y * 0.6f
+                        );
                     }
                     newPoints[vertices] = newPoints[0];
 
                     // Create new velocity at angle from original
                     float angle = (float)Math.Atan2(asteroid.Velocity.Y, asteroid.Velocity.X);
                     angle += (i == 0 ? 0.7f : -0.7f);
-                    Vector2 newVel = new Vector2(
-                        (float)Math.Cos(angle),
-                        (float)Math.Sin(angle)
-                    ) * asteroid.Velocity.Length() * 1.3f;
+
+                    _tempVector.X = (float)Math.Cos(angle) * asteroid.Velocity.Length() * 1.3f;
+                    _tempVector.Y = (float)Math.Sin(angle) * asteroid.Velocity.Length() * 1.3f;
 
                     // Add new asteroid
-                    _menuObjects.Add(new MenuObject
+                    _asteroidsToAdd.Add(new MenuObject
                     {
                         Position = asteroid.Position,
-                        Velocity = newVel,
+                        Velocity = _tempVector,
                         Points = newPoints,
                         Rotation = asteroid.Rotation,
                         RotationSpeed = asteroid.RotationSpeed * 1.5f,
@@ -427,8 +467,11 @@ namespace AsteroidsGame
             DrawRect(Vector2.Zero, new Vector2(GameConstants.ScreenWidth, GameConstants.ScreenHeight),
                     new Color(0, 0, 0, 150));
 
-            // Draw title
-            DrawTitle();
+            // Draw vector-based title at the top
+            _titleRenderer.DrawTitle("ASTEROIDS",
+                new Vector2(GameConstants.ScreenWidth / 2 - 160, GameConstants.ScreenHeight / 4 - 30),
+                1.0f,
+                Color.White);
 
             // Draw menu options
             int menuOptionHeight = 40;
@@ -458,7 +501,11 @@ namespace AsteroidsGame
                 {
                     // Draw bullet as line
                     Vector2 direction = Vector2.Normalize(obj.Velocity);
-                    DrawLine(obj.Position - direction * 4, obj.Position + direction * 4, Color.White);
+                    DrawLine(
+                        new Vector2(obj.Position.X - direction.X * 4, obj.Position.Y - direction.Y * 4),
+                        new Vector2(obj.Position.X + direction.X * 4, obj.Position.Y + direction.Y * 4),
+                        Color.White
+                    );
                 }
                 else
                 {
@@ -476,10 +523,11 @@ namespace AsteroidsGame
             for (int i = 0; i < obj.Points.Length; i++)
             {
                 // Rotate the point
-                float rotatedX = obj.Points[i].X * (float)Math.Cos(obj.Rotation) -
-                                obj.Points[i].Y * (float)Math.Sin(obj.Rotation);
-                float rotatedY = obj.Points[i].X * (float)Math.Sin(obj.Rotation) +
-                                obj.Points[i].Y * (float)Math.Cos(obj.Rotation);
+                float cos = (float)Math.Cos(obj.Rotation);
+                float sin = (float)Math.Sin(obj.Rotation);
+
+                float rotatedX = obj.Points[i].X * cos - obj.Points[i].Y * sin;
+                float rotatedY = obj.Points[i].X * sin + obj.Points[i].Y * cos;
 
                 // Translate to position
                 transformedPoints[i] = new Vector2(rotatedX + obj.Position.X, rotatedY + obj.Position.Y);
@@ -502,147 +550,10 @@ namespace AsteroidsGame
                     new Color(0, 0, 0, 150));
 
             // Draw title
-            _spriteBatch.DrawString(
-                _font,
-                "HIGH SCORES",
-                new Vector2((GameConstants.ScreenWidth - _font.MeasureString("HIGH SCORES").X) / 2, 80),
-                Color.Yellow
-            );
+            _titleRenderer.DrawTitle("HIGH SCORES",
+                new Vector2(GameConstants.ScreenWidth / 2 - 150, 80),
+                0.8f,
+                Color.Yellow);
 
             // Draw headers
-            _spriteBatch.DrawString(_font, "RANK", new Vector2(200, 150), Color.LightGray);
-            _spriteBatch.DrawString(_font, "NAME", new Vector2(300, 150), Color.LightGray);
-            _spriteBatch.DrawString(_font, "SCORE", new Vector2(500, 150), Color.LightGray);
-
-            // Draw scores
-            int scoreY = 190;
-            for (int i = 0; i < highScores.Count; i++)
-            {
-                Color rowColor = Color.White;
-                _spriteBatch.DrawString(_font, $"{i + 1}.", new Vector2(210, scoreY), rowColor);
-                _spriteBatch.DrawString(_font, highScores[i].PlayerName, new Vector2(300, scoreY), rowColor);
-                _spriteBatch.DrawString(_font, highScores[i].Score.ToString(), new Vector2(500, scoreY), rowColor);
-                scoreY += 30;
-            }
-
-            // Draw return instruction
-            _spriteBatch.DrawString(
-                _font,
-                "PRESS ENTER TO RETURN",
-                new Vector2((GameConstants.ScreenWidth - _font.MeasureString("PRESS ENTER TO RETURN").X) / 2, 500),
-                Color.Yellow
-            );
-        }
-
-        public void DrawNameEntry(string currentName)
-        {
-            // Draw background gameplay
-            DrawGameplayObjects();
-
-            // Draw semi-transparent overlay
-            DrawRect(Vector2.Zero, new Vector2(GameConstants.ScreenWidth, GameConstants.ScreenHeight),
-                    new Color(0, 0, 0, 150));
-
-            // Draw title
-            _spriteBatch.DrawString(
-                _font,
-                "NEW HIGH SCORE!",
-                new Vector2((GameConstants.ScreenWidth - _font.MeasureString("NEW HIGH SCORE!").X) / 2, 100),
-                Color.Yellow
-            );
-
-            // Draw instruction
-            _spriteBatch.DrawString(
-                _font,
-                "ENTER YOUR NAME:",
-                new Vector2((GameConstants.ScreenWidth - _font.MeasureString("ENTER YOUR NAME:").X) / 2, 180),
-                Color.White
-            );
-
-            // Draw name field
-            string nameWithCursor = currentName;
-            if (_showCursor)
-            {
-                nameWithCursor += "_";
-            }
-
-            Vector2 nameSize = _font.MeasureString(nameWithCursor);
-            Vector2 namePos = new Vector2(
-                (GameConstants.ScreenWidth - nameSize.X) / 2,
-                250
-            );
-
-            // Draw name box
-            DrawRect(
-                new Vector2(namePos.X - 10, namePos.Y - 5),
-                new Vector2(nameSize.X + 20, nameSize.Y + 10),
-                Color.DarkBlue
-            );
-
-            // Draw name text
-            _spriteBatch.DrawString(
-                _font,
-                nameWithCursor,
-                namePos,
-                Color.White
-            );
-
-            // Draw instructions
-            _spriteBatch.DrawString(
-                _font,
-                "PRESS ENTER TO CONFIRM",
-                new Vector2((GameConstants.ScreenWidth - _font.MeasureString("PRESS ENTER TO CONFIRM").X) / 2, 350),
-                Color.Yellow
-            );
-
-            _spriteBatch.DrawString(
-                _font,
-                "PRESS ESC TO CANCEL",
-                new Vector2((GameConstants.ScreenWidth - _font.MeasureString("PRESS ESC TO CANCEL").X) / 2, 380),
-                Color.Yellow
-            );
-        }
-
-        private void DrawTitle()
-        {
-            string title = "ASTEROIDS";
-            Vector2 titleSize = _font.MeasureString(title) * 1.5f;
-            Vector2 position = new Vector2(
-                (GameConstants.ScreenWidth - titleSize.X) / 2,
-                GameConstants.ScreenHeight / 4
-            );
-
-            // Draw the title with a slight pulse effect
-            float scale = 1.5f + 0.1f * (float)Math.Sin(_titlePulse);
-            _spriteBatch.DrawString(_font, title, position, Color.White, 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
-        }
-
-        private void DrawLine(Vector2 start, Vector2 end, Color color)
-        {
-            Vector2 edge = end - start;
-            float angle = (float)Math.Atan2(edge.Y, edge.X);
-
-            _spriteBatch.Draw(
-                _pixelTexture,
-                new Rectangle(
-                    (int)start.X,
-                    (int)start.Y,
-                    (int)edge.Length(),
-                    1),
-                null,
-                color,
-                angle,
-                Vector2.Zero,
-                SpriteEffects.None,
-                0);
-        }
-
-        private void DrawRect(Vector2 position, Vector2 size, Color color)
-        {
-            _spriteBatch.Draw(
-                _pixelTexture,
-                new Rectangle((int)position.X, (int)position.Y, (int)size.X, (int)size.Y),
-                color);
-        }
-    }
-}
+            _spriteBatch.DrawString(_font,
