@@ -217,6 +217,33 @@ namespace AsteroidsGame
             }
         }
 
+        public bool IsThumbstickUp()
+        {
+            return _currentGamePadState.ThumbSticks.Left.Y > 0.5f &&
+                   _previousGamePadState.ThumbSticks.Left.Y <= 0.5f;
+        }
+
+        // Check if the left thumbstick is pressed down (just pressed this frame)
+        public bool IsThumbstickDown()
+        {
+            return _currentGamePadState.ThumbSticks.Left.Y < -0.5f &&
+                   _previousGamePadState.ThumbSticks.Left.Y >= -0.5f;
+        }
+
+        // Check if the left thumbstick is pressed left (just pressed this frame)
+        public bool IsThumbstickLeft()
+        {
+            return _currentGamePadState.ThumbSticks.Left.X < -0.5f &&
+                   _previousGamePadState.ThumbSticks.Left.X >= -0.5f;
+        }
+
+        // Check if the left thumbstick is pressed right (just pressed this frame)
+        public bool IsThumbstickRight()
+        {
+            return _currentGamePadState.ThumbSticks.Left.X > 0.5f &&
+                   _previousGamePadState.ThumbSticks.Left.X <= 0.5f;
+        }
+
 
 
     }

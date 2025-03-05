@@ -15,7 +15,8 @@ namespace AsteroidsGame
             Playing,
             GameOver,
             HighScore,
-            NameEntry
+            NameEntry,
+            Achievements // New state for viewing achievements
         }
 
         private GraphicsDeviceManager _graphics;
@@ -47,6 +48,7 @@ namespace AsteroidsGame
         private InputManager _inputManager;
         private CollisionManager _collisionManager;
         private HighScoreManager _highScoreManager;
+        private AchievementManager _achievementManager;
         private SpriteFont _font;
 
         private VirtualKeyboard _virtualKeyboard;
@@ -101,6 +103,78 @@ namespace AsteroidsGame
             _scaleMatrix = Matrix.Identity;
             _virtualViewport = new Rectangle(0, 0, GameConstants.ScreenWidth, GameConstants.ScreenHeight);
         }
+
+
+        protected override void Initialize()
+        {
+            _random = new Random();
+            _asteroids = new List<Asteroid>();
+            _bullets = new List<Bullet>();
+
+            // Initialize object pools
+            _bulletPool = new List<Bullet>();
+            _asteroidPool = new List<Asteroid>();
+
+            _score = 0;
+            _lives = GameConstants.InitialLives;
+            _gameState = GameState.MainMenu;
+            _gameOver = false;
+            _vibrateController = false;
+            _vibrationTime = 0f;
+
+            _inputManager = new InputManager();
+            _collisionManager = new CollisionManager();
+            _highScoreManager = new HighScoreManager();
+
+            // Initialize achievement manager
+            _achievementManager = new AchievementManager();
+            _achievementManager.Initialize();
+
+            _difficultyManager = new DifficultyManager();
+            _enemyShips = new List<EnemyShip>();
+            _enemyShipPool = new List<EnemyShip>();
+
+            // Initialize scaling
+            UpdateScaling();
+
+            base.Initialize();
+        }
+
+        protected override void LoadContent()
+        {
+            _spriteBatch = new SpriteBatch(GraphicsDevice);
+
+            // Load font
+            _font = Content.Load<SpriteFont>("Font");
+
+            // Initialize renderers
+            _renderer = new Renderer(GraphicsDevice, Content, _spriteBatch);
+            _menuRenderer = new MenuRenderer(GraphicsDevice, _spriteBatch, _font);
+
+            // Initialize virtual keyboard for gamepad input
+            _virtualKeyboard = new VirtualKeyboard(GraphicsDevice, _font,
+                new Vector2((GameConstants.ScreenWidth - 600) / 2, 220));
+            _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
+
+            // Load achievements content
+            _achievementManager.LoadContent(Content, GraphicsDevice);
+
+            // Initialize player
+            _player = new Player(
+                new Vector2(GameConstants.ScreenWidth / 2, GameConstants.ScreenHeight / 2),
+                _renderer.ShipTexture
+            );
+
+            // Set bullet texture for player
+            _player.SetBulletTexture(_renderer.BulletTexture);
+
+            // Pre-allocate bullet objects for pool
+            PreallocateBullets();
+
+            // Pre-allocate asteroid objects for pool
+            PreallocateAsteroids();
+        }
+
 
 
         private void ForceSpawnEnemyShip()
@@ -215,70 +289,6 @@ namespace AsteroidsGame
             // Clear resize flag
             _isResizing = false;
         }
-
-        protected override void Initialize()
-        {
-            _random = new Random();
-            _asteroids = new List<Asteroid>();
-            _bullets = new List<Bullet>();
-
-            // Initialize object pools
-            _bulletPool = new List<Bullet>();
-            _asteroidPool = new List<Asteroid>();
-
-            _score = 0;
-            _lives = GameConstants.InitialLives;
-            _gameState = GameState.MainMenu;
-            _gameOver = false;
-            _vibrateController = false;
-            _vibrationTime = 0f;
-
-            _inputManager = new InputManager();
-            _collisionManager = new CollisionManager();
-            _highScoreManager = new HighScoreManager();
-
-
-            _difficultyManager = new DifficultyManager();
-            _enemyShips = new List<EnemyShip>();
-            _enemyShipPool = new List<EnemyShip>();
-
-            // Initialize scaling
-            UpdateScaling();
-
-            base.Initialize();
-        }
-
-        protected override void LoadContent()
-        {
-            _spriteBatch = new SpriteBatch(GraphicsDevice);
-
-            // Load font
-            _font = Content.Load<SpriteFont>("Font");
-
-            // Initialize renderers
-            _renderer = new Renderer(GraphicsDevice, Content, _spriteBatch);
-            _menuRenderer = new MenuRenderer(GraphicsDevice, _spriteBatch, _font);
-
-            // Initialize virtual keyboard for gamepad input
-            _virtualKeyboard = new VirtualKeyboard(GraphicsDevice, _font,
-                new Vector2((GameConstants.ScreenWidth - 600) / 2, 220));
-_highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
-            // Initialize player
-            _player = new Player(
-                new Vector2(GameConstants.ScreenWidth / 2, GameConstants.ScreenHeight / 2),
-                _renderer.ShipTexture
-            );
-
-            // Set bullet texture for player
-            _player.SetBulletTexture(_renderer.BulletTexture);
-
-            // Pre-allocate bullet objects for pool
-            PreallocateBullets();
-
-            // Pre-allocate asteroid objects for pool
-            PreallocateAsteroids();
-        }
-
         private void PreallocateBullets()
         {
             // Create bullets for the object pool
@@ -330,10 +340,10 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
             _enemyShips.Add(enemyShip);
         }
 
+
+
         protected override void Update(GameTime gameTime)
         {
-
-
             // Check if window has been resized
             if (_isResizing || Window.ClientBounds.Width != _oldWindowSize.X || Window.ClientBounds.Height != _oldWindowSize.Y)
             {
@@ -351,6 +361,13 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
                 Exit();
 
             float deltaTime = (float)gameTime.ElapsedGameTime.TotalSeconds;
+
+            // If the game state changes to menu or game over, stop any vibration
+            if (_gameState == GameState.MainMenu || _gameState == GameState.GameOver)
+            {
+                GamePad.SetVibration(PlayerIndex.One, 0, 0);
+                _vibrateController = false;
+            }
 
             // Update based on current game state
             switch (_gameState)
@@ -374,9 +391,79 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
                 case GameState.NameEntry:
                     UpdateNameEntry(deltaTime);
                     break;
+
+                case GameState.Achievements:
+                    UpdateAchievements(deltaTime);
+                    break;
             }
 
+            // Update achievements (always update to handle notifications)
+            _achievementManager.Update(deltaTime, _gameState, _score, _lives);
+
             base.Update(gameTime);
+        }
+
+
+
+        private void UpdateNameEntry(float deltaTime)
+        {
+            // Update menu background
+            _menuRenderer.Update(deltaTime, _inputManager);
+
+            // Check for F1 or Tab key to toggle virtual keyboard
+            if (_inputManager.IsKeyPressed(Keys.F1) || _inputManager.IsKeyPressed(Keys.Tab))
+            {
+                _highScoreManager.ToggleVirtualKeyboard();
+            }
+
+            // For debugging - check current state
+            if (!_highScoreManager.IsEnteringName)
+            {
+                // Name entry is complete, transition to high scores
+                _gameState = GameState.HighScore;
+                return; // Exit immediately
+            }
+
+            // Always process physical keyboard input regardless of virtual keyboard state
+            bool inputProcessed = false;
+            foreach (Keys key in _inputManager.GetPressedKeys())
+            {
+                // Process physical keyboard input
+                if (_highScoreManager.HandleKeypress(key))
+                {
+                    inputProcessed = true;
+                    // If name entry is complete, go to high scores
+                    if (!_highScoreManager.IsEnteringName)
+                    {
+                        _gameState = GameState.HighScore;
+                        return; // Exit immediately 
+                    }
+                    break;
+                }
+            }
+
+            // If using virtual keyboard, update it only if no physical keyboard input was processed
+            if (!inputProcessed && _highScoreManager.UsingVirtualKeyboard &&
+                _highScoreManager.VirtualKeyboard != null &&
+                _highScoreManager.VirtualKeyboard.IsEnabled)
+            {
+                _virtualKeyboard.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(deltaTime)), _inputManager);
+
+                // Check for controller Back button (B) to cancel
+                if (_inputManager.IsButtonPressed(Buttons.B))
+                {
+                    _highScoreManager.CancelNameEntry();
+                    _gameState = GameState.HighScore;
+                    return;
+                }
+
+                // Check again after virtual keyboard update - important!
+                if (!_highScoreManager.IsEnteringName)
+                {
+                    _gameState = GameState.HighScore;
+                    return;
+                }
+            }
         }
 
         private void UpdateMainMenu(float deltaTime)
@@ -399,7 +486,11 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
                         _gameState = GameState.HighScore;
                         break;
 
-                    case 2: // Exit
+                    case 2: // Achievements
+                        _gameState = GameState.Achievements;
+                        break;
+
+                    case 3: // Exit
                         Exit();
                         break;
                 }
@@ -551,7 +642,9 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
         private void UpdateGameOver(float deltaTime)
         {
             // Wait for restart input
-            if (_inputManager.IsRestartButtonPressed())
+            if (_inputManager.IsRestartButtonPressed() ||
+                _inputManager.IsKeyPressed(Keys.Enter) ||
+                _inputManager.IsButtonPressed(Buttons.A))
             {
                 RestartGame();
             }
@@ -577,42 +670,16 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
             }
         }
 
-        // Update the UpdateNameEntry method to handle virtual keyboard
-        private void UpdateNameEntry(float deltaTime)
+        private void UpdateAchievements(float deltaTime)
         {
-            // Update menu background
-            _menuRenderer.Update(deltaTime, _inputManager);
-
-            // If using virtual keyboard, update it
-            if (_highScoreManager.UsingVirtualKeyboard)
+            // Return to main menu when Escape is pressed
+            if (_inputManager.IsKeyPressed(Keys.Escape) || _inputManager.IsButtonPressed(Buttons.B))
             {
-                _virtualKeyboard.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(deltaTime)), _inputManager);
-
-                // Check for controller Back button (B) to cancel
-                if (_inputManager.IsButtonPressed(Buttons.B))
-                {
-                    _highScoreManager.CancelNameEntry();
-                    _gameState = GameState.HighScore;
-                }
-            }
-            else
-            {
-                // Process keyboard name entry the traditional way
-                foreach (Keys key in _inputManager.GetPressedKeys())
-                {
-                    // Let the high score manager handle the key press
-                    if (_highScoreManager.HandleKeypress(key))
-                    {
-                        // If name entry is complete, go to high scores
-                        if (!_highScoreManager.IsEnteringName)
-                        {
-                            _gameState = GameState.HighScore;
-                        }
-                        break;
-                    }
-                }
+                _gameState = GameState.MainMenu;
             }
         }
+
+
 
         protected override void Draw(GameTime gameTime)
         {
@@ -645,6 +712,19 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
                     // Make sure to pass both parameters now
                     _menuRenderer.DrawNameEntry(_highScoreManager.CurrentName, _highScoreManager);
                     break;
+
+                case GameState.Achievements:
+                    // Draw background game objects for visual effect
+                    DrawGameplayObjects();
+                    // Draw the achievements screen
+                    _achievementManager.DrawAchievementsScreen(_spriteBatch);
+                    break;
+            }
+
+            // Always draw achievement notifications (if there are any)
+            if (_gameState == GameState.Playing)
+            {
+                _achievementManager.DrawNotifications(_spriteBatch);
             }
 
             _spriteBatch.End();
@@ -751,7 +831,54 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
                 ),
                 Color.Yellow
             );
+
+            // Draw recently unlocked achievements
+            string achievementText = "Recent Achievements:";
+            Vector2 achievementPos = new Vector2(
+                (GameConstants.ScreenWidth - _font.MeasureString(achievementText).X) / 2,
+                GameConstants.ScreenHeight / 2 + 130
+            );
+
+            _spriteBatch.DrawString(
+                _font,
+                achievementText,
+                achievementPos,
+                Color.LightBlue
+            );
+
+            // Get recently unlocked achievements (up to 3)
+            var recentAchievements = _achievementManager.GetRecentlyUnlocked(3);
+            for (int i = 0; i < recentAchievements.Count; i++)
+            {
+                _spriteBatch.DrawString(
+                    _font,
+                    "• " + recentAchievements[i].Title,
+                    new Vector2(achievementPos.X, achievementPos.Y + 30 + (i * 25)),
+                    Color.White
+                );
+            }
+
+
         }
+
+        private void DrawGameplayObjects()
+        {
+            // This is a simplified version of DrawPlaying that just shows asteroids and background elements
+            // but doesn't show UI, player, or bullets
+
+            // Draw asteroids
+            foreach (var asteroid in _asteroids)
+            {
+                _renderer.DrawAsteroid(asteroid);
+            }
+
+            // Optionally draw enemy ships
+            foreach (var enemyShip in _enemyShips)
+            {
+                _renderer.DrawEnemyShip(enemyShip);
+            }
+        }
+
 
         private void AddBullet(Vector2 position, Vector2 velocity)
         {
@@ -803,29 +930,6 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
             _bullets.Add(bullet);
         }
 
-        private void RecycleBullet(int index)
-        {
-            // Return the bullet to the pool instead of destroying it
-            if (index >= 0 && index < _bullets.Count)
-            {
-                Bullet bullet = _bullets[index];
-                _bullets.RemoveAt(index);
-
-                // Make sure we don't add null bullets to the pool
-                if (bullet != null)
-                {
-                    _bulletPool.Add(bullet);
-                }
-            }
-        }
-
-        private void RecycleAsteroid(int index)
-        {
-            // Return the asteroid to the pool instead of destroying it
-            Asteroid asteroid = _asteroids[index];
-            _asteroids.RemoveAt(index);
-            _asteroidPool.Add(asteroid);
-        }
 
         private void HandleCollisions()
         {
@@ -837,6 +941,9 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
                 {
                     if (_collisionManager.CheckCollision(_player, _asteroids[i]))
                     {
+                        // Track player hit for achievements
+                        _achievementManager.TrackPlayerHit();
+
                         // Call player death method
                         PlayerDeath();
                         return; // Exit immediately - field is now clear
@@ -848,6 +955,9 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
                 {
                     if (_collisionManager.CheckCollision(_player, _enemyShips[i]))
                     {
+                        // Track player hit for achievements
+                        _achievementManager.TrackPlayerHit();
+
                         // Call player death method
                         PlayerDeath();
                         return; // Exit immediately - field is now clear
@@ -863,6 +973,9 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
 
                     if (_collisionManager.CheckCollision(_player, _bullets[i]))
                     {
+                        // Track player hit for achievements
+                        _achievementManager.TrackPlayerHit();
+
                         // Recycle the enemy bullet
                         RecycleBullet(i);
 
@@ -889,6 +1002,9 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
                     {
                         // Get points based on asteroid type and size
                         _score += _asteroids[j].GetPointValue();
+
+                        // Track asteroid destroyed for achievements
+                        _achievementManager.TrackAsteroidDestroyed(_asteroids[j].Type);
 
                         // Split the asteroid
                         SplitAsteroid(_asteroids[j]);
@@ -920,6 +1036,9 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
                                 // Enemy ship destroyed - add points
                                 _score += GameConstants.EnemyShipPoints;
 
+                                // Track enemy ship destroyed for achievements
+                                _achievementManager.TrackEnemyShipDestroyed();
+
                                 // Recycle enemy ship
                                 _enemyShipPool.Add(_enemyShips[j]);
                                 _enemyShips.RemoveAt(j);
@@ -941,6 +1060,31 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
 
                 if (bulletRemoved) break;
             }
+        }
+
+
+        private void RecycleBullet(int index)
+        {
+            // Return the bullet to the pool instead of destroying it
+            if (index >= 0 && index < _bullets.Count)
+            {
+                Bullet bullet = _bullets[index];
+                _bullets.RemoveAt(index);
+
+                // Make sure we don't add null bullets to the pool
+                if (bullet != null)
+                {
+                    _bulletPool.Add(bullet);
+                }
+            }
+        }
+
+        private void RecycleAsteroid(int index)
+        {
+            // Return the asteroid to the pool instead of destroying it
+            Asteroid asteroid = _asteroids[index];
+            _asteroids.RemoveAt(index);
+            _asteroidPool.Add(asteroid);
         }
 
         private void SpawnAsteroid(AsteroidSize size)
@@ -1018,8 +1162,6 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
             return direction * speed;
         }
 
-
-        // Update the Split Asteroid method for gold asteroids
         private void SplitAsteroid(Asteroid asteroid)
         {
             if (asteroid.Size != AsteroidSize.Small)
@@ -1075,7 +1217,8 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
             }
         }
 
-        // Add this method to clear all dangerous objects
+
+
         private void ClearPlayingField()
         {
             // Return all active asteroids to pool
@@ -1100,6 +1243,15 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
             _bullets.Clear();
         }
 
+        protected override void OnExiting(object sender, EventArgs args)
+        {
+            // Save achievements
+            _achievementManager.SaveAchievements();
+
+            base.OnExiting(sender, args);
+        }
+
+
         private void PlayerDeath()
         {
             // Decrease lives
@@ -1114,19 +1266,23 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
                 // Reset player to center
                 _player.Reset(new Vector2(GameConstants.ScreenWidth / 2, GameConstants.ScreenHeight / 2));
 
-                // Controller vibration
+                // Controller vibration - with a reasonable time limit
                 GamePad.SetVibration(PlayerIndex.One, 0.5f, 0.5f);
                 _vibrateController = true;
-                _vibrationTime = 0.5f;
+                _vibrationTime = 0.5f; // Set to a half second only
 
                 // Delay before spawning new asteroids (give player breathing room)
-                _respawnTimer = 2.0f; // Add this as a class field: private float _respawnTimer = 0f;
+                _respawnTimer = 2.0f;
             }
             else
             {
                 // Game over
                 _gameOver = true;
                 _gameState = GameState.GameOver;
+
+                // Stop vibration when game is over
+                GamePad.SetVibration(PlayerIndex.One, 0, 0);
+                _vibrateController = false;
 
                 // Check for high score
                 if (_highScoreManager.IsHighScore(_score))
@@ -1137,13 +1293,14 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
             }
         }
 
-
         private void StartNewGame()
         {
             _score = 0;
             _lives = GameConstants.InitialLives;
             _gameOver = false;
             _gameState = GameState.Playing;
+            _difficultyManager.Reset();
+            _achievementManager.TrackPlayerHit();
 
             // Return all active game objects to their pools
             foreach (var bullet in _bullets)
@@ -1168,7 +1325,6 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
             }
         }
 
-        // Update RestartGame method to reset difficulty
         private void RestartGame()
         {
             _score = 0;
@@ -1177,6 +1333,9 @@ _highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
 
             // Reset difficulty
             _difficultyManager.Reset();
+
+            _achievementManager.TrackPlayerHit();
+
 
             // Return all active game objects to their pools
             foreach (var bullet in _bullets)

@@ -13,6 +13,9 @@ namespace AsteroidsGame
         private Random _random;
         private VectorTitleRenderer _titleRenderer;
 
+        private AchievementManager _achievementManager;
+
+
         // Menu options
         private List<string> _mainMenuOptions;
         private int _selectedOption;
@@ -47,11 +50,14 @@ namespace AsteroidsGame
         // Initialization status
         private bool _fullyInitialized = false;
 
-        public MenuRenderer(GraphicsDevice graphicsDevice, SpriteBatch spriteBatch, SpriteFont font)
+
+
+        public MenuRenderer(GraphicsDevice graphicsDevice, SpriteBatch spriteBatch, SpriteFont font, AchievementManager achievementManager = null)
         {
             _spriteBatch = spriteBatch;
             _font = font;
             _random = new Random();
+            _achievementManager = achievementManager;
 
             // Create pixel texture for drawing lines
             _pixelTexture = new Texture2D(graphicsDevice, 1, 1);
@@ -60,11 +66,12 @@ namespace AsteroidsGame
             // Create title renderer
             _titleRenderer = new VectorTitleRenderer(graphicsDevice, spriteBatch);
 
-            // Initialize menu options
+            // Initialize menu options with the new Achievements option
             _mainMenuOptions = new List<string>
             {
                 "PLAY",
                 "HIGH SCORES",
+                "ACHIEVEMENTS",
                 "EXIT"
             };
             _selectedOption = 0;
@@ -80,6 +87,8 @@ namespace AsteroidsGame
             _bulletTimer = 0f;
             _attackTimer = 0f;
         }
+
+
 
         public void EnsureInitialized()
         {
@@ -467,6 +476,7 @@ namespace AsteroidsGame
             return _selectedOption;
         }
 
+
         public void DrawMainMenu()
         {
             // Draw background gameplay
@@ -497,14 +507,36 @@ namespace AsteroidsGame
                 Color optionColor = i == _selectedOption ? Color.Yellow : Color.White;
                 string prefix = i == _selectedOption ? "> " : "  ";
 
-                Vector2 textSize = _font.MeasureString(_mainMenuOptions[i]);
+                // Special handling for Achievements option to show progress
+                string optionText = _mainMenuOptions[i];
+                if (i == 2 && _achievementManager != null) // Achievements option
+                {
+                    int unlocked = _achievementManager.GetUnlockedCount();
+                    int total = _achievementManager.GetTotalCount();
+                    optionText = $"{_mainMenuOptions[i]} ({unlocked}/{total})";
+                }
+
+                Vector2 textSize = _font.MeasureString(optionText);
                 Vector2 position = new Vector2(
                     (GameConstants.ScreenWidth - textSize.X) / 2,
                     menuStartY + i * menuOptionHeight
                 );
 
-                _spriteBatch.DrawString(_font, prefix + _mainMenuOptions[i], position, optionColor);
+                _spriteBatch.DrawString(_font, prefix + optionText, position, optionColor);
             }
+
+            // Draw version or build info at the bottom
+            string versionText = "v1.0.0";
+            Vector2 versionSize = _font.MeasureString(versionText);
+            _spriteBatch.DrawString(
+                _font,
+                versionText,
+                new Vector2(
+                    GameConstants.ScreenWidth - versionSize.X - 10,
+                    GameConstants.ScreenHeight - versionSize.Y - 10
+                ),
+                new Color(150, 150, 150, 200)
+            );
         }
 
         private void DrawGameplayObjects()
@@ -653,79 +685,50 @@ namespace AsteroidsGame
                 Color.White
             );
 
-            // Draw different instructions based on whether we're using virtual keyboard
-            if (highScoreManager != null && highScoreManager.UsingVirtualKeyboard)
+            // Draw virtual keyboard if enabled
+            bool usingVirtKeyboard = highScoreManager != null &&
+                                     highScoreManager.UsingVirtualKeyboard &&
+                                     highScoreManager.VirtualKeyboard != null &&
+                                     highScoreManager.VirtualKeyboard.IsEnabled;
+
+            if (usingVirtKeyboard)
             {
                 // Draw virtual keyboard
                 highScoreManager.VirtualKeyboard?.Draw(_spriteBatch);
+            }
 
-                // Draw gamepad instructions
+            // Common instructions - always shown
+            float instructionY = usingVirtKeyboard ? 460 : 270;
+
+            // Toggle keyboard instruction
+            _spriteBatch.DrawString(
+                _font,
+                "PRESS F1 OR TAB TO TOGGLE KEYBOARD",
+                new Vector2((GameConstants.ScreenWidth - _font.MeasureString("PRESS F1 OR TAB TO TOGGLE KEYBOARD").X) / 2, instructionY),
+                Color.White
+            );
+
+            instructionY += 30;
+
+            if (usingVirtKeyboard)
+            {
                 _spriteBatch.DrawString(
                     _font,
-                    "Use D-pad or stick to navigate",
-                    new Vector2((GameConstants.ScreenWidth - _font.MeasureString("Use D-pad or stick to navigate").X) / 2, 500),
-                    Color.LightGray
-                );
-
-                _spriteBatch.DrawString(
-                    _font,
-                    "Press A to select a key",
-                    new Vector2((GameConstants.ScreenWidth - _font.MeasureString("Press A to select a key").X) / 2, 530),
+                    "PRESS A/ENTER TO SELECT, B/ESC TO CANCEL",
+                    new Vector2((GameConstants.ScreenWidth - _font.MeasureString("PRESS A/ENTER TO SELECT, B/ESC TO CANCEL").X) / 2, instructionY),
                     Color.Yellow
-                );
-
-                // Controller button guide (add visual button icons)
-                float guidePosY = 560;
-                _spriteBatch.DrawString(
-                    _font,
-                    "X: Delete",
-                    new Vector2(GameConstants.ScreenWidth / 2 - 150, guidePosY),
-                    Color.White
-                );
-
-                _spriteBatch.DrawString(
-                    _font,
-                    "Y: Space",
-                    new Vector2(GameConstants.ScreenWidth / 2, guidePosY),
-                    Color.White
-                );
-
-                _spriteBatch.DrawString(
-                    _font,
-                    "LT+RT: Confirm",
-                    new Vector2(GameConstants.ScreenWidth / 2 + 150, guidePosY),
-                    Color.Yellow
-                );
-
-                // Add B button explanation
-                _spriteBatch.DrawString(
-                    _font,
-                    "B: Cancel Entry",
-                    new Vector2(GameConstants.ScreenWidth / 2, guidePosY + 30),
-                    Color.White
                 );
             }
             else
             {
-                // Draw keyboard instructions
                 _spriteBatch.DrawString(
                     _font,
-                    "PRESS ENTER TO CONFIRM",
-                    new Vector2((GameConstants.ScreenWidth - _font.MeasureString("PRESS ENTER TO CONFIRM").X) / 2, 350),
-                    Color.Yellow
-                );
-
-                _spriteBatch.DrawString(
-                    _font,
-                    "PRESS ESC TO CANCEL",
-                    new Vector2((GameConstants.ScreenWidth - _font.MeasureString("PRESS ESC TO CANCEL").X) / 2, 380),
+                    "PRESS ENTER TO CONFIRM, ESC TO CANCEL",
+                    new Vector2((GameConstants.ScreenWidth - _font.MeasureString("PRESS ENTER TO CONFIRM, ESC TO CANCEL").X) / 2, instructionY),
                     Color.Yellow
                 );
             }
         }
-
-
-
 
         public void DrawRect(Vector2 position, Vector2 size, Color color)
         {

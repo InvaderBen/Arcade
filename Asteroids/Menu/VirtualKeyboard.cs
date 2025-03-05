@@ -21,6 +21,9 @@ namespace AsteroidsGame
             "SPACE DEL DONE"
         };
 
+        // Enabled state - can be toggled
+        public bool IsEnabled { get; private set; } = true;
+
         // Selected key position
         private int _selectedRow = 1;
         private int _selectedCol = 0;
@@ -41,8 +44,6 @@ namespace AsteroidsGame
         private const string DONE_KEY = "DONE";
 
         // Input handling
-        private GamePadState _prevGamePadState;
-        private KeyboardState _prevKeyboardState;
         private float _inputDelay = 0.2f;
         private float _inputTimer = 0f;
 
@@ -65,14 +66,13 @@ namespace AsteroidsGame
             // Create a pixel for drawing
             _pixel = new Texture2D(graphicsDevice, 1, 1);
             _pixel.SetData(new[] { Color.White });
-
-            // Initialize input states
-            _prevGamePadState = GamePad.GetState(PlayerIndex.One);
-            _prevKeyboardState = Keyboard.GetState();
         }
 
         public void Update(GameTime gameTime, InputManager inputManager)
         {
+            if (!IsEnabled)
+                return;
+
             float deltaTime = (float)gameTime.ElapsedGameTime.TotalSeconds;
 
             // Update animation
@@ -86,43 +86,39 @@ namespace AsteroidsGame
                 return;
             }
 
-            // Get current states
-            GamePadState currentPad = GamePad.GetState(PlayerIndex.One);
-            KeyboardState currentKeys = Keyboard.GetState();
-
             // Handle directional input
             bool moved = false;
 
             // Up
-            if (IsNewButtonPress(Buttons.DPadUp, currentPad) ||
-                currentPad.ThumbSticks.Left.Y > 0.5f ||
-                IsNewKeyPress(Keys.Up, currentKeys))
+            if (inputManager.IsKeyPressed(Keys.Up) ||
+                inputManager.IsButtonPressed(Buttons.DPadUp) ||
+                inputManager.IsThumbstickUp())
             {
                 _selectedRow = Math.Max(0, _selectedRow - 1);
                 _selectedCol = Math.Min(_selectedCol, _keyboardLayout[_selectedRow].Length - 1);
                 moved = true;
             }
             // Down
-            else if (IsNewButtonPress(Buttons.DPadDown, currentPad) ||
-                     currentPad.ThumbSticks.Left.Y < -0.5f ||
-                     IsNewKeyPress(Keys.Down, currentKeys))
+            else if (inputManager.IsKeyPressed(Keys.Down) ||
+                     inputManager.IsButtonPressed(Buttons.DPadDown) ||
+                     inputManager.IsThumbstickDown())
             {
                 _selectedRow = Math.Min(_keyboardLayout.Length - 1, _selectedRow + 1);
                 _selectedCol = Math.Min(_selectedCol, _keyboardLayout[_selectedRow].Length - 1);
                 moved = true;
             }
             // Left
-            else if (IsNewButtonPress(Buttons.DPadLeft, currentPad) ||
-                     currentPad.ThumbSticks.Left.X < -0.5f ||
-                     IsNewKeyPress(Keys.Left, currentKeys))
+            if (inputManager.IsKeyPressed(Keys.Left) ||
+                inputManager.IsButtonPressed(Buttons.DPadLeft) ||
+                inputManager.IsThumbstickLeft())
             {
                 _selectedCol = Math.Max(0, _selectedCol - 1);
                 moved = true;
             }
             // Right
-            else if (IsNewButtonPress(Buttons.DPadRight, currentPad) ||
-                     currentPad.ThumbSticks.Left.X > 0.5f ||
-                     IsNewKeyPress(Keys.Right, currentKeys))
+            else if (inputManager.IsKeyPressed(Keys.Right) ||
+                     inputManager.IsButtonPressed(Buttons.DPadRight) ||
+                     inputManager.IsThumbstickRight())
             {
                 _selectedCol = Math.Min(_keyboardLayout[_selectedRow].Length - 1, _selectedCol + 1);
                 moved = true;
@@ -133,62 +129,50 @@ namespace AsteroidsGame
                 _inputTimer = _inputDelay;
             }
 
-            // Handle key selection
-            if (IsNewButtonPress(Buttons.A, currentPad) || IsNewKeyPress(Keys.Enter, currentKeys))
+            // Handle key selection (A button or Enter)
+            if (inputManager.IsKeyPressed(Keys.Enter) || inputManager.IsButtonPressed(Buttons.A))
             {
                 string selectedKey = GetSelectedKeyText();
+                Console.WriteLine($"Selected key: {selectedKey}"); // Debug output
                 OnKeyPress?.Invoke(selectedKey);
                 _inputTimer = _inputDelay;
             }
 
-            // Handle special buttons for common actions
-            if (IsNewButtonPress(Buttons.X, currentPad))
+            // Handle special buttons (separate from selection)
+            if (inputManager.IsKeyPressed(Keys.Back) || inputManager.IsButtonPressed(Buttons.X))
             {
-                OnKeyPress?.Invoke(DEL_KEY);
+                OnKeyPress?.Invoke("DEL");
                 _inputTimer = _inputDelay;
             }
 
-            if (IsNewButtonPress(Buttons.Y, currentPad))
+            if (inputManager.IsKeyPressed(Keys.Space) || inputManager.IsButtonPressed(Buttons.Y))
             {
-                OnKeyPress?.Invoke(SPACE_KEY);
+                OnKeyPress?.Invoke("SPACE");
                 _inputTimer = _inputDelay;
             }
 
-            if (IsNewButtonPress(Buttons.RightTrigger, currentPad, 0.5f))
+            // DONE can be activated with trigger buttons independently
+            GamePadState padState = GamePad.GetState(PlayerIndex.One);
+            if (inputManager.IsButtonPressed(Buttons.RightTrigger) ||
+                inputManager.IsButtonPressed(Buttons.LeftTrigger) ||
+                (padState.Triggers.Left > 0.5f && padState.Triggers.Right > 0.5f))
             {
-                OnKeyPress?.Invoke(DONE_KEY);
+                OnKeyPress?.Invoke("DONE");
                 _inputTimer = _inputDelay;
             }
-
-            // Store current states
-            _prevGamePadState = currentPad;
-            _prevKeyboardState = currentKeys;
         }
 
-        private bool IsNewButtonPress(Buttons button, GamePadState current)
+        public void Toggle()
         {
-            return current.IsButtonDown(button) && !_prevGamePadState.IsButtonDown(button);
-        }
+            IsEnabled = !IsEnabled;
 
-        private bool IsNewButtonPress(Buttons button, GamePadState current, float threshold)
-        {
-            if (button == Buttons.LeftTrigger)
+            // Reset selection position when re-enabling
+            if (IsEnabled)
             {
-                return current.Triggers.Left > threshold && _prevGamePadState.Triggers.Left <= threshold;
+                _selectedRow = 1;
+                _selectedCol = 0;
+                _inputTimer = 0f; // Reset input timer to prevent accidental keypresses
             }
-            else if (button == Buttons.RightTrigger)
-            {
-                return current.Triggers.Right > threshold && _prevGamePadState.Triggers.Right <= threshold;
-            }
-            else
-            {
-                return current.IsButtonDown(button) && !_prevGamePadState.IsButtonDown(button);
-            }
-        }
-
-        private bool IsNewKeyPress(Keys key, KeyboardState current)
-        {
-            return current.IsKeyDown(key) && !_prevKeyboardState.IsKeyDown(key);
         }
 
         private string GetSelectedKeyText()
@@ -200,30 +184,28 @@ namespace AsteroidsGame
                 // Handle special keys in bottom row
                 if (_selectedRow == _keyboardLayout.Length - 1)
                 {
-                    int pos = 0;
+                    // Determine what section of the bottom row we're in
+                    string bottomRow = _keyboardLayout[_keyboardLayout.Length - 1];
+                    int spaceEndPos = "SPACE".Length;
+                    int delStartPos = spaceEndPos + 1;
+                    int delEndPos = delStartPos + "DEL".Length;
+                    int doneStartPos = delEndPos + 1;
 
-                    // Check for SPACE
-                    if (_selectedCol >= pos && _selectedCol < pos + SPACE_KEY.Length)
+                    // Check for SPACE (first section)
+                    if (_selectedCol < spaceEndPos)
                     {
-                        return SPACE_KEY;
+                        return "SPACE";
                     }
-
-                    pos += SPACE_KEY.Length + 1;
-
-                    // Check for DEL
-                    if (_selectedCol >= pos && _selectedCol < pos + DEL_KEY.Length)
+                    // Check for DEL (second section)
+                    else if (_selectedCol >= delStartPos && _selectedCol < delEndPos)
                     {
-                        return DEL_KEY;
+                        return "DEL";
                     }
-
-                    pos += DEL_KEY.Length + 1;
-
-                    // Check for DONE
-                    if (_selectedCol >= pos && _selectedCol < pos + DONE_KEY.Length)
+                    // Check for DONE (third section)
+                    else if (_selectedCol >= doneStartPos)
                     {
-                        return DONE_KEY;
+                        return "DONE";
                     }
-
                     return "";
                 }
                 else if (_selectedCol < row.Length)
@@ -237,6 +219,9 @@ namespace AsteroidsGame
 
         public void Draw(SpriteBatch spriteBatch)
         {
+            if (!IsEnabled)
+                return;
+
             float pulse = (float)Math.Sin(_pulseTime / _pulseDuration * MathHelper.TwoPi) * 0.2f + 1.0f;
             float y = _position.Y;
 
@@ -280,9 +265,6 @@ namespace AsteroidsGame
 
                 y += _keyHeight + _keyMargin;
             }
-
-            // Draw input instructions
-            DrawInstructions(spriteBatch, y + 20);
         }
 
         private void DrawKey(SpriteBatch spriteBatch, float x, float y, float width, float height, string text, float scale)
@@ -335,40 +317,8 @@ namespace AsteroidsGame
             );
             spriteBatch.DrawString(_font, text, textPos, textColor);
         }
-
-        private void DrawInstructions(SpriteBatch spriteBatch, float y)
-        {
-            float centerX = _position.X + 300;
-
-            // Title
-            spriteBatch.DrawString(
-                _font,
-                "CONTROLLER CONTROLS",
-                new Vector2(centerX - 100, y),
-                Color.White
-            );
-
-            y += 30;
-
-            // Draw controls
-            DrawInstruction(spriteBatch, "A Button", "Select Key", centerX - 150, y);
-            DrawInstruction(spriteBatch, "X Button", "Delete", centerX + 50, y);
-
-            y += 25;
-
-            DrawInstruction(spriteBatch, "Y Button", "Space", centerX - 150, y);
-            DrawInstruction(spriteBatch, "RT", "Confirm", centerX + 50, y);
-
-            y += 25;
-
-            DrawInstruction(spriteBatch, "B Button", "Cancel", centerX - 150, y);
-            DrawInstruction(spriteBatch, "D-Pad/Stick", "Navigate", centerX + 50, y);
         }
 
-        private void DrawInstruction(SpriteBatch spriteBatch, string button, string action, float x, float y)
-        {
-            spriteBatch.DrawString(_font, button + ": ", new Vector2(x, y), Color.Yellow);
-            spriteBatch.DrawString(_font, action, new Vector2(x + 80, y), Color.White);
-        }
-    }
+
+
 }

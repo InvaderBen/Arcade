@@ -71,41 +71,12 @@ namespace AsteroidsGame
             }
         }
 
-        private void HandleVirtualKeyPress(string key)
+        public void ToggleVirtualKeyboard()
         {
-            if (!_isEnteringName)
-                return;
-
-            switch (key)
+            if (_virtualKeyboard != null)
             {
-                case "SPACE":
-                    if (_currentName.Length < MaxNameLength)
-                    {
-                        _currentName += " ";
-                    }
-                    break;
-
-                case "DEL":
-                    if (_currentName.Length > 0)
-                    {
-                        _currentName = _currentName.Substring(0, _currentName.Length - 1);
-                    }
-                    break;
-
-                case "DONE":
-                    if (_currentName.Length > 0)
-                    {
-                        ConfirmNameEntry();
-                    }
-                    break;
-
-                default:
-                    // Regular character key
-                    if (_currentName.Length < MaxNameLength)
-                    {
-                        _currentName += key;
-                    }
-                    break;
+                _usingVirtualKeyboard = !_usingVirtualKeyboard;
+                _virtualKeyboard.Toggle();
             }
         }
 
@@ -120,20 +91,17 @@ namespace AsteroidsGame
             return _highScores.Count < MaxHighScores || score > _highScores.Min(x => x.Score);
         }
 
-        // Check if this player name already exists in high scores
         public bool PlayerExists(string name)
         {
             return _highScores.Any(x => x.PlayerName.Equals(name, StringComparison.OrdinalIgnoreCase));
         }
 
-        // Find the existing score for this player
         public int GetExistingScore(string name)
         {
             var entry = _highScores.FirstOrDefault(x => x.PlayerName.Equals(name, StringComparison.OrdinalIgnoreCase));
             return entry?.Score ?? 0;
         }
 
-        // Check if the new score is higher than the existing score for this player
         public bool IsHigherScore(string name, int score)
         {
             int existingScore = GetExistingScore(name);
@@ -150,6 +118,9 @@ namespace AsteroidsGame
         {
             if (_isEnteringName && !string.IsNullOrEmpty(_currentName))
             {
+                Console.WriteLine($"Confirming name entry: {_currentName}"); // Debug
+
+                // Update pending score with final name
                 _pendingScore.PlayerName = _currentName;
 
                 // Check if player already exists
@@ -176,8 +147,11 @@ namespace AsteroidsGame
 
                 SaveHighScores();
 
+                // THIS IS CRUCIAL - set the flag to false to indicate name entry is complete
                 _isEnteringName = false;
-                _currentName = "Player"; // Reset for next time
+
+                // Reset for next time
+                _currentName = "Player";
             }
         }
 
@@ -267,60 +241,121 @@ namespace AsteroidsGame
             if (!_isEnteringName)
                 return false;
 
-            // Always process keyboard entry, even when using virtual keyboard
-            if ((key >= Keys.A && key <= Keys.Z) || (key >= Keys.D0 && key <= Keys.D9))
+            // Toggle between virtual keyboard and physical keyboard
+            if (key == Keys.F1 || key == Keys.Tab)
             {
-                if (_currentName.Length < MaxNameLength)
+                ToggleVirtualKeyboard();
+                return true;
+            }
+
+            // Handle keyboard input when virtual keyboard is disabled or not available
+            if (!_usingVirtualKeyboard || _virtualKeyboard == null || !_virtualKeyboard.IsEnabled)
+            {
+                if ((key >= Keys.A && key <= Keys.Z) || (key >= Keys.D0 && key <= Keys.D9))
                 {
-                    // Convert the key to a character
-                    char character = '\0';
+                    if (_currentName.Length < MaxNameLength)
+                    {
+                        // Convert the key to a character
+                        char character = '\0';
 
-                    if (key >= Keys.A && key <= Keys.Z)
-                    {
-                        // Uppercase letters
-                        character = (char)('A' + (key - Keys.A));
-                    }
-                    else if (key >= Keys.D0 && key <= Keys.D9)
-                    {
-                        // Numbers
-                        character = (char)('0' + (key - Keys.D0));
-                    }
+                        if (key >= Keys.A && key <= Keys.Z)
+                        {
+                            // Uppercase letters
+                            character = (char)('A' + (key - Keys.A));
+                        }
+                        else if (key >= Keys.D0 && key <= Keys.D9)
+                        {
+                            // Numbers
+                            character = (char)('0' + (key - Keys.D0));
+                        }
 
-                    if (character != '\0')
+                        if (character != '\0')
+                        {
+                            _currentName += character;
+                            return true;
+                        }
+                    }
+                }
+                else if (key == Keys.Back)
+                {
+                    if (_currentName.Length > 0)
                     {
-                        _currentName += character;
+                        _currentName = _currentName.Substring(0, _currentName.Length - 1);
                         return true;
                     }
                 }
-            }
-            else if (key == Keys.Back)
-            {
-                if (_currentName.Length > 0)
+                else if (key == Keys.Enter)
                 {
-                    _currentName = _currentName.Substring(0, _currentName.Length - 1);
+                    if (_currentName.Length > 0)
+                    {
+                        ConfirmNameEntry();
+                        return true;
+                    }
+                }
+                else if (key == Keys.Escape)
+                {
+                    CancelNameEntry();
                     return true;
                 }
-            }
-            else if (key == Keys.Enter)
-            {
-                ConfirmNameEntry();
-                return true;
-            }
-            else if (key == Keys.Escape)
-            {
-                CancelNameEntry();
-                return true;
-            }
-            else if (key == Keys.Space)
-            {
-                if (_currentName.Length < MaxNameLength)
+                else if (key == Keys.Space)
                 {
-                    _currentName += " ";
-                    return true;
+                    if (_currentName.Length < MaxNameLength)
+                    {
+                        _currentName += " ";
+                        return true;
+                    }
                 }
             }
 
             return false;
         }
+
+        private void HandleVirtualKeyPress(string key)
+        {
+            if (!_isEnteringName)
+                return;
+
+            Console.WriteLine($"Handling virtual key: {key}"); // Debug output
+
+            switch (key)
+            {
+                case "SPACE":
+                    if (_currentName.Length < MaxNameLength)
+                    {
+                        _currentName += " ";
+                        Console.WriteLine("Added space"); // Debug
+                    }
+                    break;
+
+                case "DEL":
+                    if (_currentName.Length > 0)
+                    {
+                        _currentName = _currentName.Substring(0, _currentName.Length - 1);
+                        Console.WriteLine($"Deleted character, name is now: {_currentName}"); // Debug
+                    }
+                    break;
+
+                case "DONE":
+                    Console.WriteLine("DONE key pressed"); // Debug
+                    if (_currentName.Length > 0)
+                    {
+                        Console.WriteLine($"Confirming name: {_currentName}"); // Debug
+                        ConfirmNameEntry(); // Call the method that saves the high score
+                    }
+                    break;
+
+                default:
+                    // Regular character key
+                    if (_currentName.Length < MaxNameLength)
+                    {
+                        _currentName += key;
+                        Console.WriteLine($"Added character: {key}, name is now: {_currentName}"); // Debug
+                    }
+                    break;
+            }
+        }
+
+
+
     }
 }
