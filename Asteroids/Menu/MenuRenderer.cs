@@ -600,7 +600,7 @@ namespace AsteroidsGame
             );
         }
 
-        public void DrawNameEntry(string currentName)
+        public void DrawNameEntry(string currentName, HighScoreManager highScoreManager = null)
         {
             // Draw background gameplay
             DrawGameplayObjects();
@@ -613,7 +613,7 @@ namespace AsteroidsGame
             _spriteBatch.DrawString(
                 _font,
                 "NEW HIGH SCORE!",
-                new Vector2((GameConstants.ScreenWidth - _font.MeasureString("NEW HIGH SCORE!").X) / 2, 100),
+                new Vector2((GameConstants.ScreenWidth - _font.MeasureString("NEW HIGH SCORE!").X) / 2, 70),
                 Color.Yellow
             );
 
@@ -621,7 +621,7 @@ namespace AsteroidsGame
             _spriteBatch.DrawString(
                 _font,
                 "ENTER YOUR NAME:",
-                new Vector2((GameConstants.ScreenWidth - _font.MeasureString("ENTER YOUR NAME:").X) / 2, 180),
+                new Vector2((GameConstants.ScreenWidth - _font.MeasureString("ENTER YOUR NAME:").X) / 2, 120),
                 Color.White
             );
 
@@ -635,7 +635,7 @@ namespace AsteroidsGame
             Vector2 nameSize = _font.MeasureString(nameWithCursor);
             Vector2 namePos = new Vector2(
                 (GameConstants.ScreenWidth - nameSize.X) / 2,
-                250
+                170
             );
 
             // Draw name box
@@ -653,21 +653,79 @@ namespace AsteroidsGame
                 Color.White
             );
 
-            // Draw instructions
-            _spriteBatch.DrawString(
-                _font,
-                "PRESS ENTER TO CONFIRM",
-                new Vector2((GameConstants.ScreenWidth - _font.MeasureString("PRESS ENTER TO CONFIRM").X) / 2, 350),
-                Color.Yellow
-            );
+            // Draw different instructions based on whether we're using virtual keyboard
+            if (highScoreManager != null && highScoreManager.UsingVirtualKeyboard)
+            {
+                // Draw virtual keyboard
+                highScoreManager.VirtualKeyboard?.Draw(_spriteBatch);
 
-            _spriteBatch.DrawString(
-                _font,
-                "PRESS ESC TO CANCEL",
-                new Vector2((GameConstants.ScreenWidth - _font.MeasureString("PRESS ESC TO CANCEL").X) / 2, 380),
-                Color.Yellow
-            );
+                // Draw gamepad instructions
+                _spriteBatch.DrawString(
+                    _font,
+                    "Use D-pad or stick to navigate",
+                    new Vector2((GameConstants.ScreenWidth - _font.MeasureString("Use D-pad or stick to navigate").X) / 2, 500),
+                    Color.LightGray
+                );
+
+                _spriteBatch.DrawString(
+                    _font,
+                    "Press A to select a key",
+                    new Vector2((GameConstants.ScreenWidth - _font.MeasureString("Press A to select a key").X) / 2, 530),
+                    Color.Yellow
+                );
+
+                // Controller button guide (add visual button icons)
+                float guidePosY = 560;
+                _spriteBatch.DrawString(
+                    _font,
+                    "X: Delete",
+                    new Vector2(GameConstants.ScreenWidth / 2 - 150, guidePosY),
+                    Color.White
+                );
+
+                _spriteBatch.DrawString(
+                    _font,
+                    "Y: Space",
+                    new Vector2(GameConstants.ScreenWidth / 2, guidePosY),
+                    Color.White
+                );
+
+                _spriteBatch.DrawString(
+                    _font,
+                    "LT+RT: Confirm",
+                    new Vector2(GameConstants.ScreenWidth / 2 + 150, guidePosY),
+                    Color.Yellow
+                );
+
+                // Add B button explanation
+                _spriteBatch.DrawString(
+                    _font,
+                    "B: Cancel Entry",
+                    new Vector2(GameConstants.ScreenWidth / 2, guidePosY + 30),
+                    Color.White
+                );
+            }
+            else
+            {
+                // Draw keyboard instructions
+                _spriteBatch.DrawString(
+                    _font,
+                    "PRESS ENTER TO CONFIRM",
+                    new Vector2((GameConstants.ScreenWidth - _font.MeasureString("PRESS ENTER TO CONFIRM").X) / 2, 350),
+                    Color.Yellow
+                );
+
+                _spriteBatch.DrawString(
+                    _font,
+                    "PRESS ESC TO CANCEL",
+                    new Vector2((GameConstants.ScreenWidth - _font.MeasureString("PRESS ESC TO CANCEL").X) / 2, 380),
+                    Color.Yellow
+                );
+            }
         }
+
+
+
 
         public void DrawRect(Vector2 position, Vector2 size, Color color)
         {

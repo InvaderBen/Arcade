@@ -11,7 +11,7 @@ namespace AsteroidsGame
         private static float _masterSpeedMultiplier = 1f; // 0.5 = half speed, 1.0 = normal speed, 2.0 = double speed
 
         // Individual system multipliers (all relative to master speed)
-        private static float _playerMovementMultiplier = 1.0f;
+        private static float _playerMovementMultiplier = 1.5f;
         private static float _playerRotationMultiplier = 1.0f;
         private static float _bulletSpeedMultiplier = 1.0f;
         private static float _bulletFireRateMultiplier = 0.5f;

@@ -43,14 +43,70 @@ namespace AsteroidsGame
         private bool _isEnteringName = false;
         private const int MaxNameLength = 8;
 
+        // Virtual keyboard integration
+        private bool _usingVirtualKeyboard = false;
+        private VirtualKeyboard _virtualKeyboard = null;
+
         // Properties for name entry
         public bool IsEnteringName => _isEnteringName;
         public string CurrentName => _currentName;
+        public bool UsingVirtualKeyboard => _usingVirtualKeyboard;
+        public VirtualKeyboard VirtualKeyboard => _virtualKeyboard;
 
         public HighScoreManager()
         {
             _highScores = new List<ScoreEntry>();
             LoadHighScores();
+        }
+
+        public void SetVirtualKeyboard(VirtualKeyboard keyboard)
+        {
+            _virtualKeyboard = keyboard;
+            _usingVirtualKeyboard = keyboard != null;
+
+            if (_virtualKeyboard != null)
+            {
+                // Subscribe to the virtual keyboard's key press event
+                _virtualKeyboard.OnKeyPress += HandleVirtualKeyPress;
+            }
+        }
+
+        private void HandleVirtualKeyPress(string key)
+        {
+            if (!_isEnteringName)
+                return;
+
+            switch (key)
+            {
+                case "SPACE":
+                    if (_currentName.Length < MaxNameLength)
+                    {
+                        _currentName += " ";
+                    }
+                    break;
+
+                case "DEL":
+                    if (_currentName.Length > 0)
+                    {
+                        _currentName = _currentName.Substring(0, _currentName.Length - 1);
+                    }
+                    break;
+
+                case "DONE":
+                    if (_currentName.Length > 0)
+                    {
+                        ConfirmNameEntry();
+                    }
+                    break;
+
+                default:
+                    // Regular character key
+                    if (_currentName.Length < MaxNameLength)
+                    {
+                        _currentName += key;
+                    }
+                    break;
+            }
         }
 
         public List<ScoreEntry> GetHighScores()
@@ -211,7 +267,7 @@ namespace AsteroidsGame
             if (!_isEnteringName)
                 return false;
 
-            // Handle key presses for name entry
+            // Always process keyboard entry, even when using virtual keyboard
             if ((key >= Keys.A && key <= Keys.Z) || (key >= Keys.D0 && key <= Keys.D9))
             {
                 if (_currentName.Length < MaxNameLength)

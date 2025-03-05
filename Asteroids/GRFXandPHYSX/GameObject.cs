@@ -10,10 +10,11 @@ namespace AsteroidsGame
         public Vector2 Velocity { get; set; }
         public float Rotation { get; set; }
 
+
         // Appearance
         public Texture2D Texture { get; private set; }
         protected Vector2 Origin { get; set; }
-        protected float Scale { get; set; }
+        public float Scale { get; protected set; }
 
         public GameObject(Vector2 position, Vector2 velocity, Texture2D texture, float rotation = 0f)
         {

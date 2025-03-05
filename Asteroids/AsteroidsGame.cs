@@ -49,6 +49,8 @@ namespace AsteroidsGame
         private HighScoreManager _highScoreManager;
         private SpriteFont _font;
 
+        private VirtualKeyboard _virtualKeyboard;
+
         // Controller vibration
         private bool _vibrateController;
         private float _vibrationTime;
@@ -257,6 +259,10 @@ namespace AsteroidsGame
             _renderer = new Renderer(GraphicsDevice, Content, _spriteBatch);
             _menuRenderer = new MenuRenderer(GraphicsDevice, _spriteBatch, _font);
 
+            // Initialize virtual keyboard for gamepad input
+            _virtualKeyboard = new VirtualKeyboard(GraphicsDevice, _font,
+                new Vector2((GameConstants.ScreenWidth - 600) / 2, 220));
+_highScoreManager.SetVirtualKeyboard(_virtualKeyboard);
             // Initialize player
             _player = new Player(
                 new Vector2(GameConstants.ScreenWidth / 2, GameConstants.ScreenHeight / 2),
@@ -323,31 +329,6 @@ namespace AsteroidsGame
 
             _enemyShips.Add(enemyShip);
         }
-        private void AddEnemyBullet(Vector2 position, Vector2 velocity)
-        {
-            Bullet bullet;
-
-            // Try to get a bullet from the pool
-            if (_bulletPool.Count > 0)
-            {
-                bullet = _bulletPool[_bulletPool.Count - 1];
-                _bulletPool.RemoveAt(_bulletPool.Count - 1);
-
-                // Reset the bullet properties - mark as enemy bullet (not player bullet)
-                bullet.Position = position;
-                bullet.Velocity = velocity;
-                bullet.ResetLifetime();
-                bullet.IsPlayerBullet = false; // Mark as enemy bullet
-            }
-            else
-            {
-                // Create a new bullet if the pool is empty - mark as enemy bullet
-                bullet = new Bullet(position, velocity, _renderer.BulletTexture, false);
-            }
-
-            _bullets.Add(bullet);
-        }
-
 
         protected override void Update(GameTime gameTime)
         {
@@ -596,23 +577,39 @@ namespace AsteroidsGame
             }
         }
 
+        // Update the UpdateNameEntry method to handle virtual keyboard
         private void UpdateNameEntry(float deltaTime)
         {
             // Update menu background
             _menuRenderer.Update(deltaTime, _inputManager);
 
-            // Process name entry
-            foreach (Keys key in _inputManager.GetPressedKeys())
+            // If using virtual keyboard, update it
+            if (_highScoreManager.UsingVirtualKeyboard)
             {
-                // Let the high score manager handle the key press
-                if (_highScoreManager.HandleKeypress(key))
+                _virtualKeyboard.Update(new GameTime(TimeSpan.Zero, TimeSpan.FromSeconds(deltaTime)), _inputManager);
+
+                // Check for controller Back button (B) to cancel
+                if (_inputManager.IsButtonPressed(Buttons.B))
                 {
-                    // If name entry is complete, go to high scores
-                    if (!_highScoreManager.IsEnteringName)
+                    _highScoreManager.CancelNameEntry();
+                    _gameState = GameState.HighScore;
+                }
+            }
+            else
+            {
+                // Process keyboard name entry the traditional way
+                foreach (Keys key in _inputManager.GetPressedKeys())
+                {
+                    // Let the high score manager handle the key press
+                    if (_highScoreManager.HandleKeypress(key))
                     {
-                        _gameState = GameState.HighScore;
+                        // If name entry is complete, go to high scores
+                        if (!_highScoreManager.IsEnteringName)
+                        {
+                            _gameState = GameState.HighScore;
+                        }
+                        break;
                     }
-                    break;
                 }
             }
         }
@@ -645,7 +642,8 @@ namespace AsteroidsGame
                     break;
 
                 case GameState.NameEntry:
-                    _menuRenderer.DrawNameEntry(_highScoreManager.CurrentName);
+                    // Make sure to pass both parameters now
+                    _menuRenderer.DrawNameEntry(_highScoreManager.CurrentName, _highScoreManager);
                     break;
             }
 
@@ -765,15 +763,41 @@ namespace AsteroidsGame
                 bullet = _bulletPool[_bulletPool.Count - 1];
                 _bulletPool.RemoveAt(_bulletPool.Count - 1);
 
-                // Reset the bullet properties
+                // Reset the bullet properties and explicitly set as player bullet
                 bullet.Position = position;
                 bullet.Velocity = velocity;
                 bullet.ResetLifetime();
+                bullet.IsPlayerBullet = true; // Explicitly set as player bullet
             }
             else
             {
-                // Create a new bullet if the pool is empty
-                bullet = new Bullet(position, velocity, _renderer.BulletTexture);
+                // Create a new bullet if the pool is empty - explicitly set as player bullet
+                bullet = new Bullet(position, velocity, _renderer.BulletTexture, true);
+            }
+
+            _bullets.Add(bullet);
+        }
+
+        private void AddEnemyBullet(Vector2 position, Vector2 velocity)
+        {
+            Bullet bullet;
+
+            // Try to get a bullet from the pool
+            if (_bulletPool.Count > 0)
+            {
+                bullet = _bulletPool[_bulletPool.Count - 1];
+                _bulletPool.RemoveAt(_bulletPool.Count - 1);
+
+                // Reset the bullet properties - mark as enemy bullet (not player bullet)
+                bullet.Position = position;
+                bullet.Velocity = velocity;
+                bullet.ResetLifetime();
+                bullet.IsPlayerBullet = false; // Explicitly mark as enemy bullet
+            }
+            else
+            {
+                // Create a new bullet if the pool is empty - mark as enemy bullet
+                bullet = new Bullet(position, velocity, _renderer.BulletTexture, false);
             }
 
             _bullets.Add(bullet);
@@ -782,9 +806,17 @@ namespace AsteroidsGame
         private void RecycleBullet(int index)
         {
             // Return the bullet to the pool instead of destroying it
-            Bullet bullet = _bullets[index];
-            _bullets.RemoveAt(index);
-            _bulletPool.Add(bullet);
+            if (index >= 0 && index < _bullets.Count)
+            {
+                Bullet bullet = _bullets[index];
+                _bullets.RemoveAt(index);
+
+                // Make sure we don't add null bullets to the pool
+                if (bullet != null)
+                {
+                    _bulletPool.Add(bullet);
+                }
+            }
         }
 
         private void RecycleAsteroid(int index)
@@ -794,6 +826,7 @@ namespace AsteroidsGame
             _asteroids.RemoveAt(index);
             _asteroidPool.Add(asteroid);
         }
+
         private void HandleCollisions()
         {
             // PLAYER COLLISIONS - skip if player is invulnerable
@@ -867,14 +900,14 @@ namespace AsteroidsGame
                         // Small vibration feedback when hitting an asteroid
                         GamePad.SetVibration(PlayerIndex.One, 0.2f, 0.2f);
                         _vibrateController = true;
-                        _vibrationTime = 0f;
+                        _vibrationTime = MaxVibrationTime;
 
                         bulletRemoved = true;
                         break;
                     }
                 }
 
-                // Check bullet-enemy ship collisions
+                // Check bullet-enemy ship collisions if bullet wasn't already removed
                 if (!bulletRemoved)
                 {
                     for (int j = _enemyShips.Count - 1; j >= 0; j--)
@@ -898,7 +931,7 @@ namespace AsteroidsGame
                             // Vibration feedback
                             GamePad.SetVibration(PlayerIndex.One, 0.3f, 0.3f);
                             _vibrateController = true;
-                            _vibrationTime = 0f;
+                            _vibrationTime = MaxVibrationTime;
 
                             bulletRemoved = true;
                             break;
@@ -909,6 +942,7 @@ namespace AsteroidsGame
                 if (bulletRemoved) break;
             }
         }
+
         private void SpawnAsteroid(AsteroidSize size)
         {
             // Determine spawn position (at screen edge)

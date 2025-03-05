@@ -21,11 +21,22 @@ namespace AsteroidsGame
             float radiusA = (a.Texture.Width / 2) * GameConstants.CollisionScale;
             float radiusB = (b.Texture.Width / 2) * GameConstants.CollisionScale;
 
-            // Special handling for bullets
+            // Special handling for bullets - make their collision radius larger
             if (a is Bullet)
                 radiusA = 8f; // Larger radius for bullet collision
             if (b is Bullet)
                 radiusB = 8f; // Larger radius for bullet collision
+
+            // Apply object scale if available (since Scale is protected in GameObject)
+            if (a is Asteroid asteroidA)
+                radiusA *= asteroidA.Scale;
+            else if (a is Player)
+                radiusA *= 0.8f; // Make player collision a bit more forgiving
+
+            if (b is Asteroid asteroidB)
+                radiusB *= asteroidB.Scale;
+            else if (b is Player)
+                radiusB *= 0.8f;
 
             // Use squared distance for better performance (avoids square root calculation)
             float dx = a.Position.X - b.Position.X;
@@ -39,7 +50,7 @@ namespace AsteroidsGame
             // Collision occurs if squared distance is less than squared sum of radii
             return distanceSquared < radiusSumSquared;
         }
-
+        
         // Check if object is off screen
         public bool IsOffScreen(GameObject obj, int screenWidth, int screenHeight)
         {
