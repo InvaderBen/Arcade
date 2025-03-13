@@ -49,7 +49,7 @@ namespace AsteroidsGame
         private bool _isScrolling = false;
         private float _scrollPosition = 0;
         private float _targetScrollPosition = 0;
-        private float _scrollSpeed = 500f; // Pixels per second
+        private float _scrollSpeed = 500f;
 
         public AchievementManager()
         {
